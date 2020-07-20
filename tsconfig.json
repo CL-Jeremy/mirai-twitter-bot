@@ -9,6 +9,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "es6",
+    "outDir": "dist",
     "noUnusedLocals": true,
     "allowJs": true,
     "allowSyntheticDefaultImports": true

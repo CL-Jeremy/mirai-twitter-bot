@@ -1,11 +1,10 @@
 import * as fs from 'fs';
-import * as log4js from 'log4js';
 import * as path from 'path';
 
 import { relativeDate } from './datetime';
+import { getLogger } from './loggers';
 
-const logger = log4js.getLogger('command');
-logger.level = (global as any).loglevel;
+const logger = getLogger('command');
 
 function parseLink(link: string): { link: string, match: string[] } | undefined {
   let match = link.match(/twitter.com\/([^\/?#]+)\/lists\/([^\/?#]+)/);
@@ -114,4 +113,4 @@ function list(chat: IChat, args: string[], lock: ILock): string {
   return '此聊天中订阅的链接：\n' + links.join('\n');
 }
 
-export {sub, list, unsub};
+export { sub, list, unsub };

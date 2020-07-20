@@ -1,12 +1,11 @@
 import * as fs from 'fs';
-import * as log4js from 'log4js';
+import { XmlEntities } from 'html-entities';
 import * as path from 'path';
-import * as redis from 'redis';
-import { RedisClient } from 'redis';
 import * as sha1 from 'sha1';
 import * as Twitter from 'twitter';
 
-import QQBot from './cqhttp';
+import { getLogger } from './loggers';
+import QQBot from './mirai';
 import Webshot from './webshot';
 
 interface IWorkerOption {
@@ -19,12 +18,12 @@ interface IWorkerOption {
   consumer_secret: string;
   access_token_key: string;
   access_token_secret: string;
-  redis: IRedisConfig;
   mode: number;
 }
 
-const logger = log4js.getLogger('twitter');
-logger.level = (global as any).loglevel;
+const logger = getLogger('twitter');
+
+const entities = new XmlEntities();
 
 export default class {
 
@@ -35,8 +34,6 @@ export default class {
   private bot: QQBot;
   private webshotDelay: number;
   private webshot: Webshot;
-  private redisConfig: IRedisConfig;
-  private redisClient: RedisClient;
   private mode: number;
 
   constructor(opt: IWorkerOption) {
@@ -51,17 +48,10 @@ export default class {
     this.workInterval = opt.workInterval;
     this.bot = opt.bot;
     this.webshotDelay = opt.webshotDelay;
-    this.redisConfig = opt.redis;
     this.mode = opt.mode;
   }
 
   public launch = () => {
-    if (this.redisConfig) {
-      this.redisClient = redis.createClient({
-        host: this.redisConfig.redisHost,
-        port: this.redisConfig.redisPort,
-      });
-    }
     this.webshot = new Webshot(() => setTimeout(this.work, this.workInterval * 1000));
   }
 
@@ -120,13 +110,7 @@ export default class {
               logger.warn(`error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
               lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                 logger.info(`sending notfound message of ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                this.bot.bot('send_msg', {
-                  message_type: subscriber.chatType,
-                  user_id: subscriber.chatID,
-                  group_id: subscriber.chatID,
-                  discuss_id: subscriber.chatID,
-                  message: `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`,
-                });
+                this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`);
               });
             } else {
               logger.error(`unhandled error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
@@ -155,33 +139,7 @@ export default class {
           logger.debug(hash);
           hash = sha1(hash);
           logger.debug(hash);
-          const send = () => {
-            this.bot.bot('send_msg', {
-              message_type: subscriber.chatType,
-              user_id: subscriber.chatID,
-              group_id: subscriber.chatID,
-              discuss_id: subscriber.chatID,
-              message: this.mode === 0 ? msg : author + text,
-            });
-          };
-          if (this.redisClient) {
-            this.redisClient.exists(hash, (err, res) => {
-              logger.debug('redis: ', res);
-              if (err) {
-                logger.error('redis error: ', err);
-              } else if (res) {
-                logger.info('key hash exists, skip this subscriber');
-                return;
-              }
-              send();
-              this.redisClient.set(hash, 'true', 'EX', this.redisConfig.redisExpireTime, (setErr, setRes) => {
-                logger.debug('redis: ', setRes);
-                if (setErr) {
-                  logger.error('redis error: ', setErr);
-                }
-              });
-            });
-          } else send();
+          this.bot.sendTo(subscriber, this.mode === 0 ? msg : author + entities.decode(entities.decode(text)));
         });
       }, this.webshotDelay)
         .then(() => {

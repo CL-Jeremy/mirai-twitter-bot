@@ -1,23 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require("fs");
-const log4js = require("log4js");
+const html_entities_1 = require("html-entities");
 const path = require("path");
-const redis = require("redis");
 const sha1 = require("sha1");
 const Twitter = require("twitter");
+const loggers_1 = require("./loggers");
 const webshot_1 = require("./webshot");
-const logger = log4js.getLogger('twitter');
-logger.level = global.loglevel;
+const logger = loggers_1.getLogger('twitter');
+const entities = new html_entities_1.XmlEntities();
 class default_1 {
     constructor(opt) {
         this.launch = () => {
-            if (this.redisConfig) {
-                this.redisClient = redis.createClient({
-                    host: this.redisConfig.redisHost,
-                    port: this.redisConfig.redisPort,
-                });
-            }
             this.webshot = new webshot_1.default(() => setTimeout(this.work, this.workInterval * 1000));
         };
         this.work = () => {
@@ -76,13 +70,7 @@ class default_1 {
                                 logger.warn(`error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
                                 lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                                     logger.info(`sending notfound message of ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                                    this.bot.bot('send_msg', {
-                                        message_type: subscriber.chatType,
-                                        user_id: subscriber.chatID,
-                                        group_id: subscriber.chatID,
-                                        discuss_id: subscriber.chatID,
-                                        message: `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`,
-                                    });
+                                    this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`);
                                 });
                             }
                             else {
@@ -114,36 +102,7 @@ class default_1 {
                         logger.debug(hash);
                         hash = sha1(hash);
                         logger.debug(hash);
-                        const send = () => {
-                            this.bot.bot('send_msg', {
-                                message_type: subscriber.chatType,
-                                user_id: subscriber.chatID,
-                                group_id: subscriber.chatID,
-                                discuss_id: subscriber.chatID,
-                                message: this.mode === 0 ? msg : author + text,
-                            });
-                        };
-                        if (this.redisClient) {
-                            this.redisClient.exists(hash, (err, res) => {
-                                logger.debug('redis: ', res);
-                                if (err) {
-                                    logger.error('redis error: ', err);
-                                }
-                                else if (res) {
-                                    logger.info('key hash exists, skip this subscriber');
-                                    return;
-                                }
-                                send();
-                                this.redisClient.set(hash, 'true', 'EX', this.redisConfig.redisExpireTime, (setErr, setRes) => {
-                                    logger.debug('redis: ', setRes);
-                                    if (setErr) {
-                                        logger.error('redis error: ', setErr);
-                                    }
-                                });
-                            });
-                        }
-                        else
-                            send();
+                        this.bot.sendTo(subscriber, this.mode === 0 ? msg : author + entities.decode(entities.decode(text)));
                     });
                 }, this.webshotDelay)
                     .then(() => {
@@ -173,7 +132,6 @@ class default_1 {
         this.workInterval = opt.workInterval;
         this.bot = opt.bot;
         this.webshotDelay = opt.webshotDelay;
-        this.redisConfig = opt.redis;
         this.mode = opt.mode;
     }
 }

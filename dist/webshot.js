@@ -1,18 +1,35 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const CallableInstance = require("callable-instance");
-const https = require("https");
-const log4js = require("log4js");
+const fs_1 = require("fs");
+const message_1 = require("mirai-ts/dist/message");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
-const read = require("read-all-stream");
+// import * as read from 'read-all-stream';
+const loggers_1 = require("./loggers");
 const typeInZH = {
     photo: '[图片]',
     video: '[视频]',
     animated_gif: '[GIF]',
 };
-const logger = log4js.getLogger('webshot');
-logger.level = global.loglevel;
+const logger = loggers_1.getLogger('webshot');
+const tempDir = '/tmp/mirai-twitter-bot/pics/';
+const mkTempDir = () => { if (!fs_1.existsSync(tempDir))
+    fs_1.mkdirSync(tempDir, { recursive: true }); };
+const writeTempFile = (url, png) => __awaiter(void 0, void 0, void 0, function* () {
+    const path = tempDir + url.replace(/[:\/]/g, '_') + '.png';
+    yield new Promise(resolve => png.pipe(fs_1.createWriteStream(path)).on('close', resolve));
+    return path;
+});
 class Webshot extends CallableInstance {
     constructor(onready) {
         super('webshot');
@@ -29,7 +46,7 @@ class Webshot extends CallableInstance {
                         isMobile: true,
                     }))
                         .then(() => page.setBypassCSP(true))
-                        .then(() => page.goto(url))
+                        .then(() => page.goto(url, { waitUntil: 'load', timeout: 150000 }))
                         // hide header, "more options" button, like and retweet count
                         .then(() => page.addStyleTag({
                         content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
@@ -40,13 +57,14 @@ class Webshot extends CallableInstance {
                     }))
                         .then(() => page.screenshot())
                         .then(screenshot => {
+                        mkTempDir();
                         new pngjs_1.PNG({
                             filterType: 4,
                         }).on('parsed', function () {
                             // remove comment area
                             let boundary = null;
                             let x = 0;
-                            for (let y = 0; y < this.height; y++) {
+                            for (let y = 0; y < this.height - 3; y++) {
                                 const idx = (this.width * y + x) << 2;
                                 if (this.data[idx] !== 255) {
                                     boundary = y;
@@ -86,20 +104,20 @@ class Webshot extends CallableInstance {
                                     this.data = this.data.slice(0, (this.width * boundary) << 2);
                                     this.height = boundary;
                                 }
-                                read(this.pack(), 'base64').then(data => {
+                                writeTempFile(url, this.pack()).then(data => {
                                     logger.info(`finished webshot for ${url}`);
                                     resolve({ data, boundary });
                                 });
                             }
                             else if (height >= 8 * 1920) {
                                 logger.warn('too large, consider as a bug, returning');
-                                read(this.pack(), 'base64').then(data => {
+                                writeTempFile(url, this.pack()).then(data => {
                                     logger.info(`finished webshot for ${url}`);
                                     resolve({ data, boundary: 0 });
                                 });
                             }
                             else {
-                                logger.info('unable to found boundary, try shooting a larger image');
+                                logger.info('unable to find boundary, try shooting a larger image');
                                 resolve({ data: '', boundary });
                             }
                         }).parse(screenshot);
@@ -114,25 +132,19 @@ class Webshot extends CallableInstance {
                     return data.data;
             });
         };
-        this.fetchImage = (url) => new Promise(resolve => {
-            logger.info(`fetching ${url}`);
-            https.get(url, res => {
-                if (res.statusCode === 200) {
-                    read(res, 'base64').then(data => {
-                        logger.info(`successfully fetched ${url}`);
-                        resolve(data);
-                    });
-                }
-                else {
-                    logger.error(`failed to fetch ${url}: ${res.statusCode}`);
-                    resolve();
-                }
-            }).on('error', (err) => {
-                logger.error(`failed to fetch ${url}: ${err.message}`);
-                resolve();
-            });
-        });
-        puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=zh-CN,zh'] })
+        puppeteer.launch({
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu',
+                '--lang=ja-JP,ja',
+            ]
+        })
             .then(browser => this.browser = browser)
             .then(() => {
             logger.info('launched puppeteer browser');
@@ -140,6 +152,24 @@ class Webshot extends CallableInstance {
                 onready();
         });
     }
+    // private fetchImage = (url: string): Promise<string> =>
+    //   new Promise<string>(resolve => {
+    //     logger.info(`fetching ${url}`);
+    //     https.get(url, res => {
+    //       if (res.statusCode === 200) {
+    //         read(res, 'base64').then(data => {
+    //           logger.info(`successfully fetched ${url}`);
+    //           resolve(data);
+    //         });
+    //       } else {
+    //         logger.error(`failed to fetch ${url}: ${res.statusCode}`);
+    //         resolve();
+    //       }
+    //     }).on('error', (err) => {
+    //       logger.error(`failed to fetch ${url}: ${err.message}`);
+    //       resolve();
+    //     });
+    //   })
     webshot(mode, tweets, callback, webshotDelay) {
         let promise = new Promise(resolve => {
             resolve();
@@ -149,21 +179,17 @@ class Webshot extends CallableInstance {
                 logger.info(`working on ${twi.user.screen_name}/${twi.id_str}`);
             });
             const originTwi = twi.retweeted_status || twi;
-            let cqstr = '';
+            const messageChain = [];
             if (mode === 0) {
                 const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
-                    .then(base64Webshot => {
-                    if (base64Webshot)
-                        cqstr += `[CQ:image,file=base64://${base64Webshot}]`;
+                    .then(webshotFilePath => {
+                    if (webshotFilePath)
+                        messageChain.push(message_1.default.Image('', `file://${webshotFilePath}`));
                 });
                 if (originTwi.extended_entities) {
                     originTwi.extended_entities.media.forEach(media => {
-                        promise = promise.then(() => this.fetchImage(media.media_url_https))
-                            .then(base64Image => {
-                            if (base64Image)
-                                cqstr += `[CQ:image,file=base64://${base64Image}]`;
-                        });
+                        messageChain.push(message_1.default.Image('', media.media_url_https));
                     });
                 }
                 if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
@@ -172,8 +198,7 @@ class Webshot extends CallableInstance {
                             .filter(urlObj => urlObj.indices[0] < originTwi.display_text_range[1])
                             .map(urlObj => urlObj.expanded_url);
                         if (urls.length) {
-                            cqstr += '\n';
-                            cqstr += urls.join('\n');
+                            messageChain.push(message_1.default.Plain(urls.join('\n')));
                         }
                     });
                 }
@@ -199,7 +224,7 @@ class Webshot extends CallableInstance {
                 author = author.replace(/&/gm, '&amp;')
                     .replace(/\[/gm, '&#91;')
                     .replace(/\]/gm, '&#93;');
-                callback(cqstr, text, author);
+                callback(messageChain, text, author);
             });
         });
         return promise;

@@ -1,7 +1,8 @@
 {
-  "cq_ws_host": "127.0.0.1",
-  "cq_ws_port": 6700,
-  "cq_access_token": "",
+  "mirai_access_token": "",
+  "mirai_http_host": "127.0.0.1",
+  "mirai_http_port": 8080,
+  "mirai_bot_qq": 10000,
   "twitter_consumer_key": "",
   "twitter_consumer_secret": "",
   "twitter_access_token_key": "",
@@ -10,9 +11,5 @@
   "work_interval": 60,
   "webshot_delay": 5000,
   "lockfile": "subscriber.lock",
-  "loglevel": "info",
-  "redis": true,
-  "redis_host": "127.0.0.1",
-  "redis_port": 6379,
-  "redis_expire_time": 43200
+  "loglevel": "info"
 }

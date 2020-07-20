@@ -2,6 +2,7 @@ declare const enum ChatType {
   Private = 'private',
   Group = 'group',
   Discuss = 'discuss',
+  Temp = 'temp'
 }
 
 interface IChat {
@@ -20,10 +21,4 @@ interface ILock {
         subscribers: IChat[],
       }
   }
-}
-
-interface IRedisConfig {
-  redisHost: string,
-  redisPort: number,
-  redisExpireTime: number
 }

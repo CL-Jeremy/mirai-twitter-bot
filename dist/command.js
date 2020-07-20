@@ -1,11 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require("fs");
-const log4js = require("log4js");
 const path = require("path");
 const datetime_1 = require("./datetime");
-const logger = log4js.getLogger('command');
-logger.level = global.loglevel;
+const loggers_1 = require("./loggers");
+const logger = loggers_1.getLogger('command');
 function parseLink(link) {
     let match = link.match(/twitter.com\/([^\/?#]+)\/lists\/([^\/?#]+)/);
     if (match) {

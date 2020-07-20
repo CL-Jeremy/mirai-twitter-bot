@@ -3,27 +3,29 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const commandLineUsage = require("command-line-usage");
 const fs = require("fs");
-const log4js = require("log4js");
 const path = require("path");
-const logger = log4js.getLogger();
-logger.level = 'info';
+const command_1 = require("./command");
+const loggers_1 = require("./loggers");
+const mirai_1 = require("./mirai");
+const twitter_1 = require("./twitter");
+const logger = loggers_1.getLogger();
 const sections = [
     {
-        header: 'CQHTTP Twitter Bot',
+        header: 'MiraiTS Twitter Bot',
         content: 'The QQ Bot that forwards twitters.',
     },
     {
         header: 'Synopsis',
         content: [
-            '$ cqhttp-twitter-bot {underline config.json}',
-            '$ cqhttp-twitter-bot {bold --help}',
+            '$ mirai-twitter-bot {underline config.json}',
+            '$ mirai-twitter-bot {bold --help}',
         ],
     },
     {
         header: 'Documentation',
         content: [
-            'Project home: {underline https://github.com/rikakomoe/cqhttp-twitter-bot}',
-            'Example config: {underline https://qwqq.pw/qpfhg}',
+            'Project home: {underline https://github.com/CL-Jeremy/mirai-twitter-bot}',
+            'Example config: {underline https://github.com/CL-Jeremy/mirai-twitter-bot/blob/master/config.example.json}',
         ],
     },
 ];
@@ -50,17 +52,17 @@ if (config.twitter_consumer_key === undefined ||
     console.log('twitter_consumer_key twitter_consumer_secret twitter_access_token_key twitter_access_token_secret are required');
     process.exit(1);
 }
-if (config.cq_ws_host === undefined) {
-    config.cq_ws_host = '127.0.0.1';
-    logger.warn('cq_ws_host is undefined, use 127.0.0.1 as default');
+if (config.mirai_http_host === undefined) {
+    config.mirai_http_host = '127.0.0.1';
+    logger.warn('mirai_http_host is undefined, use 127.0.0.1 as default');
 }
-if (config.cq_ws_port === undefined) {
-    config.cq_ws_port = 6700;
-    logger.warn('cq_ws_port is undefined, use 6700 as default');
+if (config.mirai_http_port === undefined) {
+    config.mirai_http_port = 8080;
+    logger.warn('mirai_http_port is undefined, use 8080 as default');
 }
-if (config.cq_access_token === undefined) {
-    config.cq_access_token = '';
-    logger.warn('cq_access_token is undefined, use empty string as default');
+if (config.mirai_access_token === undefined) {
+    config.mirai_access_token = '';
+    logger.warn('mirai_access_token is undefined, use empty string as default');
 }
 if (config.lockfile === undefined) {
     config.lockfile = 'subscriber.lock';
@@ -77,18 +79,7 @@ if (config.loglevel === undefined) {
 if (typeof config.mode !== 'number') {
     config.mode = 0;
 }
-let redisConfig;
-if (config.redis) {
-    redisConfig = {
-        redisHost: config.redis_host || '127.0.0.1',
-        redisPort: config.redis_port || 6379,
-        redisExpireTime: config.redis_expire_time || 43200,
-    };
-}
-global.loglevel = config.loglevel;
-const command_1 = require("./command");
-const cqhttp_1 = require("./cqhttp");
-const twitter_1 = require("./twitter");
+loggers_1.setLogLevels(config.loglevel);
 let lock;
 if (fs.existsSync(path.resolve(config.lockfile))) {
     try {
@@ -126,10 +117,11 @@ else {
 Object.keys(lock.threads).forEach(key => {
     lock.threads[key].offset = -1;
 });
-const qq = new cqhttp_1.default({
-    access_token: config.cq_access_token,
-    host: config.cq_ws_host,
-    port: config.cq_ws_port,
+const qq = new mirai_1.default({
+    access_token: config.mirai_access_token,
+    host: config.mirai_http_host,
+    port: config.mirai_http_port,
+    bot_id: config.mirai_bot_qq,
     list: (c, a) => command_1.list(c, a, lock),
     sub: (c, a) => command_1.sub(c, a, lock, config.lockfile),
     unsub: (c, a) => command_1.unsub(c, a, lock, config.lockfile),
@@ -144,7 +136,6 @@ const worker = new twitter_1.default({
     workInterval: config.work_interval,
     bot: qq,
     webshotDelay: config.webshot_delay,
-    redis: redisConfig,
     mode: config.mode,
 });
 worker.launch();
