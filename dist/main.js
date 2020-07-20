@@ -136,6 +136,7 @@ const worker = new twitter_1.default({
     workInterval: config.work_interval,
     bot: qq,
     webshotDelay: config.webshot_delay,
+    webshotOutDir: config.mirai_http_base_dir + '/images',
     mode: config.mode,
 });
 worker.launch();

@@ -1,7 +1,5 @@
 import * as fs from 'fs';
-import { XmlEntities } from 'html-entities';
 import * as path from 'path';
-import * as sha1 from 'sha1';
 import * as Twitter from 'twitter';
 
 import { getLogger } from './loggers';
@@ -14,6 +12,7 @@ interface IWorkerOption {
   bot: QQBot;
   workInterval: number;
   webshotDelay: number;
+  webshotOutDir: string;
   consumer_key: string;
   consumer_secret: string;
   access_token_key: string;
@@ -23,8 +22,6 @@ interface IWorkerOption {
 
 const logger = getLogger('twitter');
 
-const entities = new XmlEntities();
-
 export default class {
 
   private client;
@@ -33,6 +30,7 @@ export default class {
   private workInterval: number;
   private bot: QQBot;
   private webshotDelay: number;
+  private webshotOutDir: string;
   private webshot: Webshot;
   private mode: number;
 
@@ -48,11 +46,16 @@ export default class {
     this.workInterval = opt.workInterval;
     this.bot = opt.bot;
     this.webshotDelay = opt.webshotDelay;
+    this.webshotOutDir = opt.webshotOutDir;
     this.mode = opt.mode;
   }
 
   public launch = () => {
-    this.webshot = new Webshot(() => setTimeout(this.work, this.workInterval * 1000));
+    this.webshot = new Webshot(
+      this.webshotOutDir,
+      this.mode,
+      () => setTimeout(this.work, this.workInterval * 1000)
+    );
   }
 
   public work = () => {
@@ -132,14 +135,10 @@ export default class {
         return;
       }
       if (lock.threads[lock.feed[lock.workon]].offset === 0) tweets.splice(1);
-      return (this.webshot as any)(this.mode, tweets, (msg, text, author) => {
+      return (this.webshot as any)(tweets, msg => {
         lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-          let hash = JSON.stringify(subscriber) + text.replace(/\s+/gm, '');
-          logger.debug(hash);
-          hash = sha1(hash);
-          logger.debug(hash);
-          this.bot.sendTo(subscriber, this.mode === 0 ? msg : author + entities.decode(entities.decode(text)));
+          this.bot.sendTo(subscriber, msg);
         });
       }, this.webshotDelay)
         .then(() => {

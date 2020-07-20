@@ -2,6 +2,7 @@
   "mirai_access_token": "",
   "mirai_http_host": "127.0.0.1",
   "mirai_http_port": 8080,
+  "mirai_http_base_dir": ".",
   "mirai_bot_qq": 10000,
   "twitter_consumer_key": "",
   "twitter_consumer_secret": "",

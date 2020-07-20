@@ -9,31 +9,33 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const axios_1 = require("axios");
 const CallableInstance = require("callable-instance");
 const fs_1 = require("fs");
+const html_entities_1 = require("html-entities");
 const message_1 = require("mirai-ts/dist/message");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
-// import * as read from 'read-all-stream';
 const loggers_1 = require("./loggers");
+const writeOutTo = (path, data) => __awaiter(void 0, void 0, void 0, function* () {
+    yield new Promise(resolve => data.pipe(fs_1.createWriteStream(path)).on('close', resolve));
+    return path;
+});
+const xmlEntities = new html_entities_1.XmlEntities();
 const typeInZH = {
     photo: '[图片]',
     video: '[视频]',
     animated_gif: '[GIF]',
 };
 const logger = loggers_1.getLogger('webshot');
-const tempDir = '/tmp/mirai-twitter-bot/pics/';
-const mkTempDir = () => { if (!fs_1.existsSync(tempDir))
-    fs_1.mkdirSync(tempDir, { recursive: true }); };
-const writeTempFile = (url, png) => __awaiter(void 0, void 0, void 0, function* () {
-    const path = tempDir + url.replace(/[:\/]/g, '_') + '.png';
-    yield new Promise(resolve => png.pipe(fs_1.createWriteStream(path)).on('close', resolve));
-    return path;
-});
+const mkdirP = dir => { if (!fs_1.existsSync(dir))
+    fs_1.mkdirSync(dir, { recursive: true }); };
+const baseName = path => path.split(/[/\\]/).slice(-1)[0];
 class Webshot extends CallableInstance {
-    constructor(onready) {
+    constructor(outDir, mode, onready) {
         super('webshot');
         this.renderWebshot = (url, height, webshotDelay) => {
+            const writeOutPic = (pic) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.png`, pic);
             const promise = new Promise(resolve => {
                 const width = 600;
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
@@ -57,14 +59,13 @@ class Webshot extends CallableInstance {
                     }))
                         .then(() => page.screenshot())
                         .then(screenshot => {
-                        mkTempDir();
                         new pngjs_1.PNG({
                             filterType: 4,
                         }).on('parsed', function () {
                             // remove comment area
                             let boundary = null;
                             let x = 0;
-                            for (let y = 0; y < this.height - 3; y++) {
+                            for (let y = 0; y < this.height; y++) {
                                 const idx = (this.width * y + x) << 2;
                                 if (this.data[idx] !== 255) {
                                     boundary = y;
@@ -88,11 +89,11 @@ class Webshot extends CallableInstance {
                                     else
                                         continue;
                                     // line above the "comment", "retweet", "like", "share" button row
-                                    if (cnt === 2) {
+                                    if (cnt === 6) {
                                         boundary = y + 1;
                                     }
                                     // if there are a "retweet" count and "like" count row, this will be the line above it
-                                    if (cnt === 4) {
+                                    if (cnt === 8) {
                                         const b = y + 1;
                                         if (this.height - b <= 200)
                                             boundary = b;
@@ -104,15 +105,14 @@ class Webshot extends CallableInstance {
                                     this.data = this.data.slice(0, (this.width * boundary) << 2);
                                     this.height = boundary;
                                 }
-                                writeTempFile(url, this.pack()).then(data => {
+                                writeOutPic(this.pack()).then(data => {
                                     logger.info(`finished webshot for ${url}`);
                                     resolve({ data, boundary });
                                 });
                             }
                             else if (height >= 8 * 1920) {
                                 logger.warn('too large, consider as a bug, returning');
-                                writeTempFile(url, this.pack()).then(data => {
-                                    logger.info(`finished webshot for ${url}`);
+                                writeOutPic(this.pack()).then(data => {
                                     resolve({ data, boundary: 0 });
                                 });
                             }
@@ -132,45 +132,54 @@ class Webshot extends CallableInstance {
                     return data.data;
             });
         };
-        puppeteer.launch({
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-gpu',
-                '--lang=ja-JP,ja',
-            ]
-        })
-            .then(browser => this.browser = browser)
-            .then(() => {
-            logger.info('launched puppeteer browser');
-            if (onready)
-                onready();
-        });
+        this.fetchImage = (url, tag) => new Promise(resolve => {
+            logger.info(`fetching ${url}`);
+            axios_1.default({
+                method: 'get',
+                url,
+                responseType: 'stream',
+            }).then(res => {
+                if (res.status === 200) {
+                    logger.info(`successfully fetched ${url}`);
+                    resolve(res.data);
+                }
+                else {
+                    logger.error(`failed to fetch ${url}: ${res.status}`);
+                    resolve();
+                }
+            }).catch(err => {
+                logger.error(`failed to fetch ${url}: ${err.message}`);
+                resolve();
+            });
+        }).then(data => writeOutTo(`${this.outDir}/${tag}${baseName(url)}`, data));
+        mkdirP(this.outDir = outDir);
+        // tslint:disable-next-line: no-conditional-assignment
+        if (this.mode = mode) {
+            onready();
+        }
+        else {
+            puppeteer.launch({
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu',
+                    '--lang=ja-JP,ja',
+                ]
+            })
+                .then(browser => this.browser = browser)
+                .then(() => {
+                logger.info('launched puppeteer browser');
+                if (onready)
+                    onready();
+            });
+        }
     }
-    // private fetchImage = (url: string): Promise<string> =>
-    //   new Promise<string>(resolve => {
-    //     logger.info(`fetching ${url}`);
-    //     https.get(url, res => {
-    //       if (res.statusCode === 200) {
-    //         read(res, 'base64').then(data => {
-    //           logger.info(`successfully fetched ${url}`);
-    //           resolve(data);
-    //         });
-    //       } else {
-    //         logger.error(`failed to fetch ${url}: ${res.statusCode}`);
-    //         resolve();
-    //       }
-    //     }).on('error', (err) => {
-    //       logger.error(`failed to fetch ${url}: ${err.message}`);
-    //       resolve();
-    //     });
-    //   })
-    webshot(mode, tweets, callback, webshotDelay) {
+    webshot(tweets, callback, webshotDelay) {
         let promise = new Promise(resolve => {
             resolve();
         });
@@ -180,18 +189,45 @@ class Webshot extends CallableInstance {
             });
             const originTwi = twi.retweeted_status || twi;
             const messageChain = [];
-            if (mode === 0) {
+            // text processing
+            let author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
+            if (twi.retweeted_status)
+                author += `RT @${twi.retweeted_status.user.screen_name}: `;
+            let text = originTwi.full_text;
+            promise = promise.then(() => {
+                if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
+                    originTwi.entities.urls.forEach(url => {
+                        text = text.replace(new RegExp(url.url, 'gm'), url.expanded_url);
+                    });
+                }
+                if (originTwi.extended_entities) {
+                    originTwi.extended_entities.media.forEach(media => {
+                        text = text.replace(new RegExp(media.url, 'gm'), this.mode === 1 ? typeInZH[media.type] : '');
+                    });
+                }
+                if (this.mode > 0)
+                    messageChain.push(message_1.default.Plain(author + xmlEntities.decode(text)));
+            });
+            // invoke webshot
+            if (this.mode === 0) {
                 const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
                     .then(webshotFilePath => {
                     if (webshotFilePath)
-                        messageChain.push(message_1.default.Image('', `file://${webshotFilePath}`));
+                        messageChain.push(message_1.default.Image('', '', baseName(webshotFilePath)));
                 });
+                // fetch extra images
+            }
+            else if (1 - this.mode % 2) {
                 if (originTwi.extended_entities) {
-                    originTwi.extended_entities.media.forEach(media => {
-                        messageChain.push(message_1.default.Image('', media.media_url_https));
-                    });
+                    promise = promise.then(() => originTwi.extended_entities.media.forEach(media => {
+                        this.fetchImage(media.media_url_https, `${twi.user.screen_name}-${twi.id_str}--`)
+                            .then(path => messageChain.push(message_1.default.Image('', '', baseName(path))));
+                    }));
                 }
+                // append URLs, if any
+            }
+            else if (this.mode === 0) {
                 if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
                     promise = promise.then(() => {
                         const urls = originTwi.entities.urls
@@ -204,26 +240,8 @@ class Webshot extends CallableInstance {
                 }
             }
             promise.then(() => {
-                let text = originTwi.full_text;
-                if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
-                    originTwi.entities.urls.forEach(url => {
-                        text = text.replace(new RegExp(url.url, 'gm'), url.expanded_url);
-                    });
-                }
-                if (originTwi.extended_entities) {
-                    originTwi.extended_entities.media.forEach(media => {
-                        text = text.replace(new RegExp(media.url, 'gm'), typeInZH[media.type]);
-                    });
-                }
-                text = text.replace(/&/gm, '&amp;')
-                    .replace(/\[/gm, '&#91;')
-                    .replace(/\]/gm, '&#93;');
-                let author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
-                if (twi.retweeted_status)
-                    author += `RT @${twi.retweeted_status.user.screen_name}: `;
-                author = author.replace(/&/gm, '&amp;')
-                    .replace(/\[/gm, '&#91;')
-                    .replace(/\]/gm, '&#93;');
+                logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
+                logger.info(JSON.stringify(messageChain));
                 callback(messageChain, text, author);
             });
         });

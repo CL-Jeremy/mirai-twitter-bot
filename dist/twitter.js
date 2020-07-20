@@ -1,18 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require("fs");
-const html_entities_1 = require("html-entities");
 const path = require("path");
-const sha1 = require("sha1");
 const Twitter = require("twitter");
 const loggers_1 = require("./loggers");
 const webshot_1 = require("./webshot");
 const logger = loggers_1.getLogger('twitter');
-const entities = new html_entities_1.XmlEntities();
 class default_1 {
     constructor(opt) {
         this.launch = () => {
-            this.webshot = new webshot_1.default(() => setTimeout(this.work, this.workInterval * 1000));
+            this.webshot = new webshot_1.default(this.webshotOutDir, this.mode, () => setTimeout(this.work, this.workInterval * 1000));
         };
         this.work = () => {
             const lock = this.lock;
@@ -95,14 +92,10 @@ class default_1 {
                 }
                 if (lock.threads[lock.feed[lock.workon]].offset === 0)
                     tweets.splice(1);
-                return this.webshot(this.mode, tweets, (msg, text, author) => {
+                return this.webshot(tweets, msg => {
                     lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                         logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                        let hash = JSON.stringify(subscriber) + text.replace(/\s+/gm, '');
-                        logger.debug(hash);
-                        hash = sha1(hash);
-                        logger.debug(hash);
-                        this.bot.sendTo(subscriber, this.mode === 0 ? msg : author + entities.decode(entities.decode(text)));
+                        this.bot.sendTo(subscriber, msg);
                     });
                 }, this.webshotDelay)
                     .then(() => {
@@ -132,6 +125,7 @@ class default_1 {
         this.workInterval = opt.workInterval;
         this.bot = opt.bot;
         this.webshotDelay = opt.webshotDelay;
+        this.webshotOutDir = opt.webshotOutDir;
         this.mode = opt.mode;
     }
 }

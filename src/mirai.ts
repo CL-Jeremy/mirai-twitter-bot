@@ -27,18 +27,21 @@ export default class {
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  public sendTo = (subscriber: IChat, msg) => {
-    switch (subscriber.chatType) {
-      case 'group':
-        return this.bot.api.sendGroupMessage(msg, subscriber.chatID)
-        .catch(reason => 
-          logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
-      case 'private':
-        return this.bot.api.sendFriendMessage(msg, subscriber.chatID)
-        .catch(reason => 
-          logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
-    }
-  }
+  public sendTo = (subscriber: IChat, msg) =>
+    (() => {
+      switch (subscriber.chatType) {
+        case 'group':
+          return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
+        case 'private':
+          return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+      }
+    })()
+    .then(response => {
+      logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
+      logger.info(response);
+    })
+    .catch(reason =>
+      logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`))
 
   private initBot = () => {
     this.bot = new Mirai({
@@ -81,6 +84,7 @@ export default class {
     });
 }
 
+  // TODO doesn't work if connection is dropped after connection
   private listen = (logMsg?: string) => {
     if (logMsg !== '') {
       logger.warn(logMsg ?? 'Listening...');

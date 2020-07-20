@@ -145,6 +145,7 @@ const worker = new Worker({
   workInterval: config.work_interval,
   bot: qq,
   webshotDelay: config.webshot_delay,
+  webshotOutDir: config.mirai_http_base_dir + '/images',
   mode: config.mode,
 });
 worker.launch();

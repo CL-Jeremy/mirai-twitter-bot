@@ -21,16 +21,19 @@ const ChatTypeMap = {
 };
 class default_1 {
     constructor(opt) {
-        this.sendTo = (subscriber, msg) => {
+        this.sendTo = (subscriber, msg) => (() => {
             switch (subscriber.chatType) {
                 case 'group':
-                    return this.bot.api.sendGroupMessage(msg, subscriber.chatID)
-                        .catch(reason => logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
+                    return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
                 case 'private':
-                    return this.bot.api.sendFriendMessage(msg, subscriber.chatID)
-                        .catch(reason => logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
+                    return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
             }
-        };
+        })()
+            .then(response => {
+            logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
+            logger.info(response);
+        })
+            .catch(reason => logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
         this.initBot = () => {
             this.bot = new mirai_ts_1.default({
                 authKey: this.botInfo.access_token,
@@ -71,6 +74,7 @@ class default_1 {
                 }
             });
         };
+        // TODO doesn't work if connection is dropped after connection
         this.listen = (logMsg) => {
             if (logMsg !== '') {
                 logger.warn((logMsg !== null && logMsg !== void 0 ? logMsg : 'Listening...'));
