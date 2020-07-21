@@ -2,19 +2,18 @@ import axios from 'axios';
 import * as CallableInstance from 'callable-instance';
 import { createWriteStream, existsSync, mkdirSync } from 'fs';
 import { XmlEntities } from 'html-entities';
-import { MessageType } from 'mirai-ts';
-import Message from 'mirai-ts/dist/message';
 import { PNG } from 'pngjs';
 import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import { Stream } from 'stream';
 
 import { getLogger } from './loggers';
+import { MessageChain, MiraiMessage as Message } from './mirai';
 
-const writeOutTo = async (path: string, data: PNG | Stream) => {
-  await new Promise(resolve => data.pipe(createWriteStream(path)).on('close', resolve));
-  return path;
-};
+const writeOutTo = (path: string, data: PNG | Stream) =>
+  new Promise<string>(resolve => {
+    data.pipe(createWriteStream(path)).on('close', () => resolve(path));
+  });
 
 const xmlEntities = new XmlEntities();
 
@@ -28,8 +27,6 @@ const logger = getLogger('webshot');
 
 const mkdirP = dir => { if (!existsSync(dir)) mkdirSync(dir, {recursive: true}); };
 const baseName = path => path.split(/[/\\]/).slice(-1)[0];
-
-type MessageChain = MessageType.MessageChain;
 
 class Webshot extends CallableInstance<[number], Promise<void>> {
 
@@ -227,12 +224,13 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
       // fetch extra images
       } else if (1 - this.mode % 2) {
         if (originTwi.extended_entities) {
-          promise = promise.then(() => originTwi.extended_entities.media.forEach(media => {
-            this.fetchImage(media.media_url_https, `${twi.user.screen_name}-${twi.id_str}--`)
-            .then(path =>
-              messageChain.push(Message.Image('', '', baseName(path)))
-            );
-          }));
+          originTwi.extended_entities.media.forEach(media =>
+            promise = promise.then(() =>
+              this.fetchImage(media.media_url_https, `${twi.user.screen_name}-${twi.id_str}--`)
+              .then(path => {
+                messageChain.push(Message.Image('', '', baseName(path)));
+              })
+          ));
         }
 
       // append URLs, if any

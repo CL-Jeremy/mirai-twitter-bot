@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as Twitter from 'twitter';
 
 import { getLogger } from './loggers';
-import QQBot from './mirai';
+import QQBot, { MessageChain, MiraiMessage as Message } from './mirai';
 import Webshot from './webshot';
 
 interface IWorkerOption {
@@ -113,7 +113,7 @@ export default class {
               logger.warn(`error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
               lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                 logger.info(`sending notfound message of ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`);
+                this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`).catch();
               });
             } else {
               logger.error(`unhandled error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
@@ -138,7 +138,18 @@ export default class {
       return (this.webshot as any)(tweets, msg => {
         lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-          this.bot.sendTo(subscriber, msg);
+          this.bot.sendTo(subscriber, msg)
+          .catch(reason => { // workaround for https://github.com/mamoe/mirai/issues/194
+            if (typeof(msg) !== 'string') {
+              logger.warn(`retry sending to ${subscriber.chatID}`);
+              (msg as MessageChain).forEach((message, pos) => {
+                if (message.type === 'Image') {
+                  msg[pos] = Message.Plain(`[失败的图片：${message.path}]`);
+                }
+              });
+              this.bot.sendTo(subscriber, msg).catch();
+            }
+          });
         });
       }, this.webshotDelay)
         .then(() => {

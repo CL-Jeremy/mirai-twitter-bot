@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const Twitter = require("twitter");
 const loggers_1 = require("./loggers");
+const mirai_1 = require("./mirai");
 const webshot_1 = require("./webshot");
 const logger = loggers_1.getLogger('twitter');
 class default_1 {
@@ -67,7 +68,7 @@ class default_1 {
                                 logger.warn(`error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
                                 lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                                     logger.info(`sending notfound message of ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                                    this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`);
+                                    this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`).catch();
                                 });
                             }
                             else {
@@ -95,7 +96,18 @@ class default_1 {
                 return this.webshot(tweets, msg => {
                     lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                         logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                        this.bot.sendTo(subscriber, msg);
+                        this.bot.sendTo(subscriber, msg)
+                            .catch(reason => {
+                            if (typeof (msg) !== 'string') {
+                                logger.warn(`retry sending to ${subscriber.chatID}`);
+                                msg.forEach((message, pos) => {
+                                    if (message.type === 'Image') {
+                                        msg[pos] = mirai_1.MiraiMessage.Plain(`[失败的图片：${message.path}]`);
+                                    }
+                                });
+                                this.bot.sendTo(subscriber, msg).catch();
+                            }
+                        });
                     });
                 }, this.webshotDelay)
                     .then(() => {

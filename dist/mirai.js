@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
 const mirai_ts_1 = require("mirai-ts");
+const message_1 = require("mirai-ts/dist/message");
 const helper_1 = require("./helper");
 const loggers_1 = require("./loggers");
 const logger = loggers_1.getLogger('qqbot');
@@ -19,6 +20,7 @@ const ChatTypeMap = {
     FriendMessage: "private" /* Private */,
     TempMessage: "temp" /* Temp */,
 };
+exports.MiraiMessage = message_1.default;
 class default_1 {
     constructor(opt) {
         this.sendTo = (subscriber, msg) => (() => {
@@ -33,7 +35,10 @@ class default_1 {
             logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
             logger.info(response);
         })
-            .catch(reason => logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`));
+            .catch(reason => {
+            logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
+            throw Error(reason);
+        });
         this.initBot = () => {
             this.bot = new mirai_ts_1.default({
                 authKey: this.botInfo.access_token,

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Mirai, { MessageType } from 'mirai-ts';
+import Message from 'mirai-ts/dist/message';
 
 import command from './helper';
 import { getLogger } from './loggers';
@@ -22,12 +23,15 @@ const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
   TempMessage: ChatType.Temp,
 };
 
+export type MessageChain = MessageType.MessageChain;
+export const MiraiMessage = Message;
+
 export default class {
 
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  public sendTo = (subscriber: IChat, msg) =>
+  public sendTo = (subscriber: IChat, msg: string | MessageChain) =>
     (() => {
       switch (subscriber.chatType) {
         case 'group':
@@ -40,8 +44,10 @@ export default class {
       logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
       logger.info(response);
     })
-    .catch(reason =>
-      logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`))
+    .catch(reason => {
+      logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
+      throw Error(reason);
+    })
 
   private initBot = () => {
     this.bot = new Mirai({
