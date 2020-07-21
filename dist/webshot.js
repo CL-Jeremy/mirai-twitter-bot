@@ -6,6 +6,7 @@ const fs_1 = require("fs");
 const html_entities_1 = require("html-entities");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
+const sharp = require("sharp");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
 const writeOutTo = (path, data) => new Promise(resolve => {
@@ -25,7 +26,8 @@ class Webshot extends CallableInstance {
     constructor(outDir, mode, onready) {
         super('webshot');
         this.renderWebshot = (url, height, webshotDelay) => {
-            const writeOutPic = (pic) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.png`, pic);
+            const jpeg = (data) => data.pipe(sharp()).jpeg({ quality: 90, trellisQuantisation: true });
+            const writeOutPic = (pic) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.jpg`, pic);
             const promise = new Promise(resolve => {
                 const width = 1080;
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
@@ -52,6 +54,7 @@ class Webshot extends CallableInstance {
                         .then(screenshot => {
                         new pngjs_1.PNG({
                             filterType: 4,
+                            deflateLevel: 0,
                         }).on('parsed', function () {
                             // remove comment area
                             let boundary = null;
@@ -102,14 +105,14 @@ class Webshot extends CallableInstance {
                                     this.data = this.data.slice(0, (this.width * boundary) << 2);
                                     this.height = boundary;
                                 }
-                                writeOutPic(this.pack()).then(path => {
+                                writeOutPic(jpeg(this.pack())).then(path => {
                                     logger.info(`finished webshot for ${url}`);
                                     resolve({ path, boundary });
                                 });
                             }
                             else if (height >= 8 * 1920) {
                                 logger.warn('too large, consider as a bug, returning');
-                                writeOutPic(this.pack()).then(path => {
+                                writeOutPic(jpeg(this.pack())).then(path => {
                                     resolve({ path, boundary: 0 });
                                 });
                             }
@@ -149,7 +152,7 @@ class Webshot extends CallableInstance {
                 resolve();
             });
         }).then(data => {
-            const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+)(:.*)/, '$1$2$1'))}`;
+            const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+):(.*)/, '$1__$2$1'))}`;
             return writeOutTo(`${this.outDir}/${imgName}`, data);
         });
         mkdirP(this.outDir = outDir);
