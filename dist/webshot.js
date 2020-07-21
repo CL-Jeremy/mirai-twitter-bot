@@ -141,7 +141,10 @@ class Webshot extends CallableInstance {
                 logger.error(`failed to fetch ${url}: ${err.message}`);
                 resolve();
             });
-        }).then(data => writeOutTo(`${this.outDir}/${tag}${baseName(url)}`, data));
+        }).then(data => {
+            const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+)(:.*)/, '$1$2$1'))}`;
+            return writeOutTo(`${this.outDir}/${imgName}`, data);
+        });
         mkdirP(this.outDir = outDir);
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
@@ -210,7 +213,7 @@ class Webshot extends CallableInstance {
             }
             else if (1 - this.mode % 2) {
                 if (originTwi.extended_entities) {
-                    originTwi.extended_entities.media.forEach(media => promise = promise.then(() => this.fetchImage(media.media_url_https, `${twi.user.screen_name}-${twi.id_str}--`)
+                    originTwi.extended_entities.media.forEach(media => promise = promise.then(() => this.fetchImage(media.media_url_https + ':orig', `${twi.user.screen_name}-${twi.id_str}--`)
                         .then(path => {
                         messageChain.push(mirai_1.MiraiMessage.Image('', '', baseName(path)));
                     })));

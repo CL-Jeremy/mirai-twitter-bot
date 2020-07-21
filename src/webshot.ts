@@ -176,7 +176,10 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
         logger.error(`failed to fetch ${url}: ${err.message}`);
         resolve();
       });
-    }).then(data => writeOutTo(`${this.outDir}/${tag}${baseName(url)}`, data))
+    }).then(data => {
+      const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+)(:.*)/, '$1$2$1'))}`;
+      return writeOutTo(`${this.outDir}/${imgName}`, data);
+    })
 
   public webshot(
     tweets,
@@ -226,7 +229,7 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
         if (originTwi.extended_entities) {
           originTwi.extended_entities.media.forEach(media =>
             promise = promise.then(() =>
-              this.fetchImage(media.media_url_https, `${twi.user.screen_name}-${twi.id_str}--`)
+              this.fetchImage(media.media_url_https + ':orig', `${twi.user.screen_name}-${twi.id_str}--`)
               .then(path => {
                 messageChain.push(Message.Image('', '', baseName(path)));
               })
