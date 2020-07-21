@@ -41,18 +41,8 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
     if (this.mode = mode) {
       onready();
     } else {
-      puppeteer.launch({
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process', // <- this one doesn't works in Windows
-          '--disable-gpu',
-          '--lang=ja-JP,ja',
-        ]})
+      // use local Chromium
+      puppeteer.connect({browserURL: 'http://127.0.0.1:9222'})
       .then(browser => this.browser = browser)
       .then(() => {
         logger.info('launched puppeteer browser');
@@ -63,16 +53,17 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
 
   private renderWebshot = (url: string, height: number, webshotDelay: number): Promise<string> => {
     const writeOutPic = (pic: PNG) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.png`, pic);
-    const promise = new Promise<{ data: string, boundary: null | number }>(resolve => {
-      const width = 600;
+    const promise = new Promise<{ path: string, boundary: null | number }>(resolve => {
+      const width = 1080;
       logger.info(`shooting ${width}*${height} webshot for ${url}`);
       this.browser.newPage()
         .then(page => {
           page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
             .then(() => page.setViewport({
-              width,
-              height,
+              width: width / 2,
+              height: height / 2,
               isMobile: true,
+              deviceScaleFactor: 2,
             }))
             .then(() => page.setBypassCSP(true))
             .then(() => page.goto(url, {waitUntil: 'load', timeout: 150000}))
@@ -91,11 +82,16 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
               }).on('parsed', function () {
                 // remove comment area
                 let boundary = null;
-                let x = 0;
+                let x = Math.floor(this.width / 180);
                 for (let y = 0; y < this.height; y++) {
                   const idx = (this.width * y + x) << 2;
                   if (this.data[idx] !== 255) {
-                    boundary = y;
+                    if (this.data[idx + this.width * 10] !== 255) {
+                      // footer kicks in
+                      boundary = null;
+                    } else {
+                      boundary = y;
+                    }
                     break;
                   }
                 }
@@ -105,7 +101,7 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                   this.height = boundary;
 
                   boundary = null;
-                  x = Math.floor(this.width / 2);
+                  x = Math.floor(this.width / 30);
                   let flag = false;
                   let cnt = 0;
                   for (let y = this.height - 1; y >= 0; y--) {
@@ -116,12 +112,12 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                     } else continue;
 
                     // line above the "comment", "retweet", "like", "share" button row
-                    if (cnt === 6) {
+                    if (cnt === 2) {
                       boundary = y + 1;
                     }
 
                     // if there are a "retweet" count and "like" count row, this will be the line above it
-                    if (cnt === 8) {
+                    if (cnt === 4) {
                       const b = y + 1;
                       if (this.height - b <= 200) boundary = b;
                       break;
@@ -133,18 +129,18 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                     this.height = boundary;
                   }
 
-                  writeOutPic(this.pack()).then(data => {
+                  writeOutPic(this.pack()).then(path => {
                     logger.info(`finished webshot for ${url}`);
-                    resolve({data, boundary});
+                    resolve({path, boundary});
                   });
                 } else if (height >= 8 * 1920) {
                   logger.warn('too large, consider as a bug, returning');
-                  writeOutPic(this.pack()).then(data => {
-                    resolve({data, boundary: 0});
+                  writeOutPic(this.pack()).then(path => {
+                    resolve({path, boundary: 0});
                   });
                 } else {
                   logger.info('unable to find boundary, try shooting a larger image');
-                  resolve({data: '', boundary});
+                  resolve({path: '', boundary});
                 }
               }).parse(screenshot);
             })
@@ -153,7 +149,7 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
     });
     return promise.then(data => {
       if (data.boundary === null) return this.renderWebshot(url, height + 1920, webshotDelay);
-      else return data.data;
+      else return data.path;
     });
   }
 
@@ -223,9 +219,9 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
           .then(webshotFilePath => {
             if (webshotFilePath) messageChain.push(Message.Image('', '', baseName(webshotFilePath)));
           });
-
+      }
       // fetch extra images
-      } else if (1 - this.mode % 2) {
+      if (1 - this.mode % 2) {
         if (originTwi.extended_entities) {
           originTwi.extended_entities.media.forEach(media =>
             promise = promise.then(() =>
@@ -235,9 +231,9 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
               })
           ));
         }
-
+      }
       // append URLs, if any
-      } else if (this.mode === 0) {
+      if (this.mode === 0) {
         if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
           promise = promise.then(() => {
             const urls = originTwi.entities.urls
