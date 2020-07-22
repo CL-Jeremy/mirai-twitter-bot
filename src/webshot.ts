@@ -42,30 +42,41 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
     if (this.mode = mode) {
       onready();
     } else {
-      // use local Chromium
-      puppeteer.connect({browserURL: 'http://127.0.0.1:9222'})
-      .then(browser => this.browser = browser)
-      .then(() => {
-        logger.info('launched puppeteer browser');
-        if (onready) onready();
-      });
+      this.connect(onready);
     }
+  }
+
+  // use local Chromium
+  private connect = (onready) => puppeteer.connect({browserURL: 'http://127.0.0.1:9222'})
+  .then(browser => this.browser = browser)
+  .then(() => {
+    logger.info('launched puppeteer browser');
+    if (onready) return onready();
+  })
+  .catch(error => this.reconnect(error, onready))
+
+  private reconnect = (error, onready?) => {
+    logger.error(`connection error, reason: ${error}`);
+    logger.warn('trying to reconnect in 2.5s...');
+    return new Promise(resolve => setTimeout(resolve, 2500))
+    .then(() => this.connect(onready));
   }
 
   private renderWebshot = (url: string, height: number, webshotDelay: number): Promise<string> => {
     const jpeg = (data: Stream) => data.pipe(sharp()).jpeg({quality: 90, trellisQuantisation: true});
     const writeOutPic = (pic: Stream) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.jpg`, pic);
-    const promise = new Promise<{ path: string, boundary: null | number }>(resolve => {
-      const width = 1080;
+    const promise = new Promise<{ path: string, boundary: null | number }>((resolve, reject) => {
+      const width = 720;
+      const zoomFactor = 2;
       logger.info(`shooting ${width}*${height} webshot for ${url}`);
       this.browser.newPage()
         .then(page => {
           page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
             .then(() => page.setViewport({
-              width: width / 2,
-              height: height / 2,
+              width: width / zoomFactor,
+              height: height / zoomFactor,
               isMobile: true,
-              deviceScaleFactor: 2,
+              deviceScaleFactor: zoomFactor,
             }))
             .then(() => page.setBypassCSP(true))
             .then(() => page.goto(url, {waitUntil: 'load', timeout: 150000}))
@@ -84,12 +95,13 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                 deflateLevel: 0,
               }).on('parsed', function () {
                 // remove comment area
+                // tslint:disable-next-line: no-shadowed-variable
+                const idx = (x: number, y: number) => (this.width * y + x) << 2;
                 let boundary = null;
-                let x = Math.floor(this.width / 180);
+                let x = zoomFactor * 2;
                 for (let y = 0; y < this.height; y++) {
-                  const idx = (this.width * y + x) << 2;
-                  if (this.data[idx] !== 255) {
-                    if (this.data[idx + this.width * 10] !== 255) {
+                  if (this.data[idx(x, y)] !== 255) {
+                    if (this.data[idx(x, y + 18 * zoomFactor)] !== 255) {
                       // footer kicks in
                       boundary = null;
                     } else {
@@ -100,16 +112,15 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                 }
                 if (boundary !== null) {
                   logger.info(`found boundary at ${boundary}, cropping image`);
-                  this.data = this.data.slice(0, (this.width * boundary) << 2);
+                  this.data = this.data.slice(0, idx(this.width, boundary));
                   this.height = boundary;
 
                   boundary = null;
-                  x = Math.floor(this.width / 30);
+                  x = Math.floor(16 * zoomFactor);
                   let flag = false;
                   let cnt = 0;
                   for (let y = this.height - 1; y >= 0; y--) {
-                    const idx = (this.width * y + x) << 2;
-                    if ((this.data[idx] === 255) === flag) {
+                    if ((this.data[idx(x, y)] === 255) === flag) {
                       cnt++;
                       flag = !flag;
                     } else continue;
@@ -122,13 +133,23 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
                     // if there are a "retweet" count and "like" count row, this will be the line above it
                     if (cnt === 4) {
                       const b = y + 1;
-                      if (this.height - b <= 200) boundary = b;
-                      break;
+                      if (this.height - boundary - (boundary - b) <= 1) {
+                        boundary = b;
+                      }
+                    }
+
+                    // if "retweet" count and "like" count are two rows, this will be the line above the first
+                    if (cnt === 6) {
+                      const c = y + 1;
+                      if (this.height - boundary - 2 * (boundary - c) <= 2) {
+                        boundary = c;
+                        break;
+                      }
                     }
                   }
                   if (boundary != null) {
                     logger.info(`found boundary at ${boundary}, trimming image`);
-                    this.data = this.data.slice(0, (this.width * boundary) << 2);
+                    this.data = this.data.slice(0, idx(this.width, boundary));
                     this.height = boundary;
                   }
 
@@ -148,12 +169,16 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
               }).parse(screenshot);
             })
             .then(() => page.close());
-        });
+        })
+        .catch(reject);
     });
     return promise.then(data => {
       if (data.boundary === null) return this.renderWebshot(url, height + 1920, webshotDelay);
       else return data.path;
-    });
+    }).catch(error =>
+      new Promise(resolve => this.reconnect(error, resolve))
+      .then(() => this.renderWebshot(url, height, webshotDelay))
+    );
   }
 
   private fetchImage = (url: string, tag: string): Promise<string> =>
