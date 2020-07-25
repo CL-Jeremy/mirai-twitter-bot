@@ -135,28 +135,50 @@ export default class {
         return;
       }
       if (lock.threads[lock.feed[lock.workon]].offset === 0) tweets.splice(1);
-      return (this.webshot as any)(tweets, msg => {
+
+      const maxCount = 3;
+      let sendTimeout = 5000;
+      const retryTimeout = 1500;
+      const ordinal = (n: number) => {
+        switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
+          case 1:
+            return `${n}st`;
+          case 2:
+            return `${n}nd`;
+          case 3:
+            return `${n}rd`;
+          default:
+            return `${n}th`;
+        }
+      };
+      const sendTweets = (msg: MessageChain, text: string, author: string) => {
         lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-          const retry = reason => { // workaround for https://github.com/mamoe/mirai/issues/194
-            if (typeof(msg) !== 'string') {
-              logger.warn(`retry sending to ${subscriber.chatID}`);
+          const retry = (reason, count: number) => { // workaround for https://github.com/mamoe/mirai/issues/194
+            if (count <= maxCount) sendTimeout *= count / (count - 1);
+            setTimeout(() => {
               (msg as MessageChain).forEach((message, pos) => {
-                if (message.type === 'Image') {
-                  msg[pos] = Message.Plain(`[失败的图片：${message.path}]`);
+                if (count > maxCount && message.type === 'Image') {
+                  if (pos === 0) {
+                    logger.warn(`${count - 1} consecutive failures sending webshot, trying plain text instead...`);
+                    msg[pos] = Message.Plain(author + text);
+                  } else {
+                    msg[pos] = Message.Plain(`[失败的图片：${message.path}]`);
+                  }
                 }
               });
-            }
-            this.bot.sendTo(subscriber, msg).catch(retry);
+              logger.warn(`retry sending to ${subscriber.chatID} for the ${ordinal(count)} time...`);
+              this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, count + 1));
+            }, retryTimeout);
           };
-          this.bot.sendTo(subscriber, msg).catch(retry);
+          this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, 1));
         });
-      }, this.webshotDelay)
-        .then(() => {
-          lock.threads[lock.feed[lock.workon]].offset = tweets[0].id_str;
-          lock.threads[lock.feed[lock.workon]].updatedAt = new Date().toString();
-        });
-
+      };
+      return (this.webshot as any)(tweets, sendTweets, this.webshotDelay)
+      .then(() => {
+        lock.threads[lock.feed[lock.workon]].offset = tweets[0].id_str;
+        lock.threads[lock.feed[lock.workon]].updatedAt = new Date().toString();
+      });
     })
       .then(() => {
         lock.workon++;

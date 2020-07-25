@@ -23,14 +23,19 @@ const ChatTypeMap = {
 exports.MiraiMessage = message_1.default;
 class default_1 {
     constructor(opt) {
-        this.sendTo = (subscriber, msg) => (() => {
-            switch (subscriber.chatType) {
-                case 'group':
-                    return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
-                case 'private':
-                    return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
-            }
-        })()
+        this.sendTo = (subscriber, msg, timeout) => new Promise((resolve, reject) => {
+            if (timeout === 0 || timeout < -1)
+                reject('Error: timeout must be greater than 0 ms');
+            (() => {
+                switch (subscriber.chatType) {
+                    case 'group':
+                        return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
+                    case 'private':
+                        return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+                }
+            })().then(resolve).catch(reject);
+            setTimeout(() => reject('Error: request timed out'), timeout);
+        })
             .then(response => {
             logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
             logger.info(response);

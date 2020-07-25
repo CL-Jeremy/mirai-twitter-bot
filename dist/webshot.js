@@ -253,7 +253,7 @@ class Webshot extends CallableInstance {
             promise.then(() => {
                 logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
                 logger.info(JSON.stringify(messageChain));
-                callback(messageChain, text, author);
+                callback(messageChain, xmlEntities.decode(text), author);
             });
         });
         return promise;

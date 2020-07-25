@@ -1,5 +1,5 @@
 import axios from 'axios';
-import Mirai, { MessageType } from 'mirai-ts';
+import Mirai, { Api, MessageType } from 'mirai-ts';
 import Message from 'mirai-ts/dist/message';
 
 import command from './helper';
@@ -31,15 +31,19 @@ export default class {
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  public sendTo = (subscriber: IChat, msg: string | MessageChain) =>
-    (() => {
-      switch (subscriber.chatType) {
-        case 'group':
-          return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
-        case 'private':
-          return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
-      }
-    })()
+  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout?: number) =>
+    new Promise<Api.Response.sendMessage>((resolve, reject) => {
+      if (timeout === 0 || timeout < -1) reject('Error: timeout must be greater than 0 ms');
+      (() => {
+        switch (subscriber.chatType) {
+          case 'group':
+            return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
+          case 'private':
+            return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+        }
+      })().then(resolve).catch(reject);
+      setTimeout(() => reject('Error: request timed out'), timeout);
+    })
     .then(response => {
       logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
       logger.info(response);
