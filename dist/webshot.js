@@ -113,13 +113,13 @@ class Webshot extends CallableInstance {
                                         const b = y + 1;
                                         if (this.height - boundary - (boundary - b) <= 1) {
                                             boundary = b;
-                                        }
-                                    }
-                                    // if "retweet" count and "like" count are two rows, this will be the line above the first
-                                    if (cnt === 6) {
-                                        const c = y + 1;
-                                        if (this.height - boundary - 2 * (boundary - c) <= 2) {
-                                            boundary = c;
+                                            //   }
+                                            // }
+                                            // // if "retweet" count and "like" count are two rows, this will be the line above the first
+                                            // if (cnt === 6) {
+                                            //   const c = y + 1;
+                                            //   if (this.height - boundary - 2 * (boundary - c) <= 2) {
+                                            //     boundary = c;
                                             break;
                                         }
                                     }

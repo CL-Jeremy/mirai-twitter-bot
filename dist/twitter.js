@@ -96,8 +96,7 @@ class default_1 {
                 return this.webshot(tweets, msg => {
                     lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
                         logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                        this.bot.sendTo(subscriber, msg)
-                            .catch(reason => {
+                        const retry = reason => {
                             if (typeof (msg) !== 'string') {
                                 logger.warn(`retry sending to ${subscriber.chatID}`);
                                 msg.forEach((message, pos) => {
@@ -105,9 +104,10 @@ class default_1 {
                                         msg[pos] = mirai_1.MiraiMessage.Plain(`[失败的图片：${message.path}]`);
                                     }
                                 });
-                                this.bot.sendTo(subscriber, msg).catch();
                             }
-                        });
+                            this.bot.sendTo(subscriber, msg).catch(retry);
+                        };
+                        this.bot.sendTo(subscriber, msg).catch(retry);
                     });
                 }, this.webshotDelay)
                     .then(() => {

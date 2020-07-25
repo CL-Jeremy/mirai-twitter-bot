@@ -138,8 +138,7 @@ export default class {
       return (this.webshot as any)(tweets, msg => {
         lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-          this.bot.sendTo(subscriber, msg)
-          .catch(reason => { // workaround for https://github.com/mamoe/mirai/issues/194
+          const retry = reason => { // workaround for https://github.com/mamoe/mirai/issues/194
             if (typeof(msg) !== 'string') {
               logger.warn(`retry sending to ${subscriber.chatID}`);
               (msg as MessageChain).forEach((message, pos) => {
@@ -147,9 +146,10 @@ export default class {
                   msg[pos] = Message.Plain(`[失败的图片：${message.path}]`);
                 }
               });
-              this.bot.sendTo(subscriber, msg).catch();
             }
-          });
+            this.bot.sendTo(subscriber, msg).catch(retry);
+          };
+          this.bot.sendTo(subscriber, msg).catch(retry);
         });
       }, this.webshotDelay)
         .then(() => {
