@@ -1,6 +1,6 @@
 {
-  "name": "cqhttp-twitter-bot",
-  "version": "0.1",
+  "name": "@CL-Jeremy/mirai-twitter-bot",
+  "version": "0.1.0",
   "description": "Mirai Twitter Bot",
   "main": "./dist/main.js",
   "bin": {
@@ -10,14 +10,16 @@
     "type": "git",
     "url": "git+https://github.com/CL-Jeremy/mirai-twitter-bot.git"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
   "keywords": [
-    "cq",
     "qq",
     "qqbot",
-    "cqhttp",
+    "mirai",
     "twitter"
   ],
-  "author": "Riko",
+  "author": "CL-Jeremy",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/CL-Jeremy/mirai-twitter-bot/issues"
