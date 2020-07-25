@@ -10,6 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
+const crypto = require("crypto");
 const mirai_ts_1 = require("mirai-ts");
 const message_1 = require("mirai-ts/dist/message");
 const helper_1 = require("./helper");
@@ -23,27 +24,44 @@ const ChatTypeMap = {
 exports.MiraiMessage = message_1.default;
 class default_1 {
     constructor(opt) {
-        this.sendTo = (subscriber, msg, timeout) => new Promise((resolve, reject) => {
-            if (timeout === 0 || timeout < -1)
-                reject('Error: timeout must be greater than 0 ms');
-            (() => {
-                switch (subscriber.chatType) {
-                    case 'group':
-                        return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
-                    case 'private':
-                        return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+        this.revokeList = new Set();
+        this.sendTo = (subscriber, msg, timeout) => {
+            const msgId = `${new Date().getTime()}${crypto.randomBytes(8).toString('hex')}`;
+            timeout = Math.floor(timeout);
+            return new Promise((resolve, reject) => {
+                if (timeout === 0 || timeout < -1 || timeout > 0xFFFFFFFF) {
+                    reject(`Error: timeout must be between 1 - ${0xFFFFFFFF} ms`);
                 }
-            })().then(resolve).catch(reject);
-            setTimeout(() => reject('Error: request timed out'), timeout);
-        })
-            .then(response => {
-            logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
-            logger.info(response);
-        })
-            .catch(reason => {
-            logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
-            throw Error(reason);
-        });
+                (() => {
+                    switch (subscriber.chatType) {
+                        case 'group':
+                            return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
+                        case 'private':
+                            return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+                    }
+                })().then(response => {
+                    if (this.revokeList.has(msgId)) {
+                        this.bot.api.recall(response.messageId)
+                            .then(() => logger.info(`overdue message to ${subscriber.chatID} recalled`))
+                            .catch(() => logger.info(`error recalling overdue message to ${subscriber.chatID}`))
+                            .finally(() => this.revokeList.delete(msgId));
+                    }
+                    resolve(response);
+                }).catch(reject);
+                setTimeout(() => {
+                    this.revokeList.add(msgId);
+                    reject('Error: timed out, requesting termination');
+                }, timeout);
+            })
+                .then(response => {
+                logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
+                logger.info(response);
+            })
+                .catch(reason => {
+                logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
+                throw Error(reason);
+            });
+        };
         this.initBot = () => {
             this.bot = new mirai_ts_1.default({
                 authKey: this.botInfo.access_token,

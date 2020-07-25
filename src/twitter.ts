@@ -137,7 +137,7 @@ export default class {
       if (lock.threads[lock.feed[lock.workon]].offset === 0) tweets.splice(1);
 
       const maxCount = 3;
-      let sendTimeout = 5000;
+      let sendTimeout = 10000;
       const retryTimeout = 1500;
       const ordinal = (n: number) => {
         switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
@@ -155,7 +155,7 @@ export default class {
         lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
           const retry = (reason, count: number) => { // workaround for https://github.com/mamoe/mirai/issues/194
-            if (count <= maxCount) sendTimeout *= count / (count - 1);
+            if (count <= maxCount) sendTimeout *= (count + 2) / (count + 1);
             setTimeout(() => {
               (msg as MessageChain).forEach((message, pos) => {
                 if (count > maxCount && message.type === 'Image') {

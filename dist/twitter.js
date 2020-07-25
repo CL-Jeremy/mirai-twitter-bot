@@ -94,7 +94,7 @@ class default_1 {
                 if (lock.threads[lock.feed[lock.workon]].offset === 0)
                     tweets.splice(1);
                 const maxCount = 3;
-                let sendTimeout = 5000;
+                let sendTimeout = 10000;
                 const retryTimeout = 1500;
                 const ordinal = (n) => {
                     switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
@@ -113,7 +113,7 @@ class default_1 {
                         logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
                         const retry = (reason, count) => {
                             if (count <= maxCount)
-                                sendTimeout *= count / (count - 1);
+                                sendTimeout *= (count + 2) / (count + 1);
                             setTimeout(() => {
                                 msg.forEach((message, pos) => {
                                     if (count > maxCount && message.type === 'Image') {

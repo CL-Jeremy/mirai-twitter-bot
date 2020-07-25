@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as crypto from 'crypto';
 import Mirai, { Api, MessageType } from 'mirai-ts';
 import Message from 'mirai-ts/dist/message';
 
@@ -31,9 +32,15 @@ export default class {
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout?: number) =>
-    new Promise<Api.Response.sendMessage>((resolve, reject) => {
-      if (timeout === 0 || timeout < -1) reject('Error: timeout must be greater than 0 ms');
+  private revokeList: Set<string> = new Set();
+
+  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout?: number) => {
+    const msgId = `${new Date().getTime()}${crypto.randomBytes(8).toString('hex')}`;
+    timeout = Math.floor(timeout);
+    return new Promise<Api.Response.sendMessage>((resolve, reject) => {
+      if (timeout === 0 || timeout < -1 || timeout > 0xFFFFFFFF) {
+        reject(`Error: timeout must be between 1 - ${0xFFFFFFFF} ms`);
+      }
       (() => {
         switch (subscriber.chatType) {
           case 'group':
@@ -41,8 +48,19 @@ export default class {
           case 'private':
             return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
         }
-      })().then(resolve).catch(reject);
-      setTimeout(() => reject('Error: request timed out'), timeout);
+      })().then(response => {
+        if (this.revokeList.has(msgId)) {
+          this.bot.api.recall(response.messageId)
+          .then(() => logger.info(`overdue message to ${subscriber.chatID} recalled`))
+          .catch(() => logger.info(`error recalling overdue message to ${subscriber.chatID}`))
+          .finally(() => this.revokeList.delete(msgId));
+        }
+        resolve(response);
+      }).catch(reject);
+      setTimeout(() => {
+        this.revokeList.add(msgId);
+        reject('Error: timed out, requesting termination');
+      }, timeout);
     })
     .then(response => {
       logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
@@ -51,7 +69,8 @@ export default class {
     .catch(reason => {
       logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
       throw Error(reason);
-    })
+    });
+  }
 
   private initBot = () => {
     this.bot = new Mirai({
