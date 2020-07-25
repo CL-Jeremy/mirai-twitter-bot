@@ -1,14 +1,14 @@
 {
   "name": "cqhttp-twitter-bot",
-  "version": "1.2.5",
-  "description": "CQHTTP Twitter Bot",
+  "version": "0.1",
+  "description": "Mirai Twitter Bot",
   "main": "./dist/main.js",
   "bin": {
-    "cqhttp-twitter-bot": "./dist/main.js"
+    "mirai-twitter-bot": "./dist/main.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rikakomoe/cqhttp-twitter-bot.git"
+    "url": "git+https://github.com/CL-Jeremy/mirai-twitter-bot.git"
   },
   "keywords": [
     "cq",
@@ -20,9 +20,9 @@
   "author": "Riko",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/rikakomoe/cqhttp-twitter-bot/issues"
+    "url": "https://github.com/CL-Jeremy/mirai-twitter-bot/issues"
   },
-  "homepage": "https://github.com/rikakomoe/cqhttp-twitter-bot",
+  "homepage": "https://github.com/CL-Jeremy/mirai-twitter-bot",
   "scripts": {
     "build": "rm -rf dist && tsc --outDir dist",
     "lint": "tslint --fix -c tslint.json --project ./"
