@@ -1,6 +1,5 @@
 import axios from 'axios';
-import * as crypto from 'crypto';
-import Mirai, { Api, MessageType } from 'mirai-ts';
+import Mirai, { MessageType } from 'mirai-ts';
 import Message from 'mirai-ts/dist/message';
 
 import command from './helper';
@@ -32,36 +31,24 @@ export default class {
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  private revokeList: Set<string> = new Set();
-
-  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout?: number) => {
-    const msgId = `${new Date().getTime()}${crypto.randomBytes(8).toString('hex')}`;
-    timeout = Math.floor(timeout);
-    return new Promise<Api.Response.sendMessage>((resolve, reject) => {
-      if (timeout === 0 || timeout < -1 || timeout > 0xFFFFFFFF) {
-        reject(`Error: timeout must be between 1 - ${0xFFFFFFFF} ms`);
+  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout = -1) =>
+    (() => {
+      if (timeout) timeout = Math.floor(timeout);
+      if (timeout === 0 || timeout < -1) {
+        return Promise.reject('Error: timeout must be greater than 0ms');
       }
-      (() => {
+      try {
+        this.bot.axios.defaults.timeout = timeout === -1 ? 0 : timeout;
         switch (subscriber.chatType) {
           case 'group':
             return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
           case 'private':
             return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
         }
-      })().then(response => {
-        if (this.revokeList.has(msgId)) {
-          this.bot.api.recall(response.messageId)
-          .then(() => logger.info(`overdue message to ${subscriber.chatID} recalled`))
-          .catch(() => logger.info(`error recalling overdue message to ${subscriber.chatID}`))
-          .finally(() => this.revokeList.delete(msgId));
-        }
-        resolve(response);
-      }).catch(reject);
-      setTimeout(() => {
-        this.revokeList.add(msgId);
-        reject('Error: timed out, requesting termination');
-      }, timeout);
-    })
+      } finally {
+        this.bot.axios.defaults.timeout = 0;
+      }
+    })()
     .then(response => {
       logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
       logger.info(response);
@@ -69,8 +56,7 @@ export default class {
     .catch(reason => {
       logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
       throw Error(reason);
-    });
-  }
+    })
 
   private initBot = () => {
     this.bot = new Mirai({
