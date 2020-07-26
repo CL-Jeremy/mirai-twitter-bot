@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Twitter from 'twitter';
+import TwitterTypes from 'twitter-d';
 
 import { getLogger } from './loggers';
-import QQBot, { MessageChain, MiraiMessage as Message } from './mirai';
+import QQBot, { Message, MessageChain } from './mirai';
 import Webshot from './webshot';
 
 interface IWorkerOption {
@@ -22,9 +23,27 @@ interface IWorkerOption {
 
 const logger = getLogger('twitter');
 
+export type FullUser = TwitterTypes.FullUser;
+export type Entities = TwitterTypes.Entities;
+export type ExtendedEntities = TwitterTypes.ExtendedEntities;
+
+interface ITweet {
+  user: FullUser;
+  entities: Entities;
+  extended_entities: ExtendedEntities;
+  full_text: string;
+  display_text_range: [number, number];
+  id: number;
+  id_str: string;
+  retweeted_status?: Tweet;
+}
+
+export type Tweet = ITweet;
+export type Tweets = ITweet[];
+
 export default class {
 
-  private client;
+  private client: Twitter;
   private lock: ILock;
   private lockfile: string;
   private workInterval: number;

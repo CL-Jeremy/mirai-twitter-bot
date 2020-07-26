@@ -9,7 +9,8 @@ import * as sharp from 'sharp';
 import { Stream } from 'stream';
 
 import { getLogger } from './loggers';
-import { MessageChain, MiraiMessage as Message } from './mirai';
+import { Message, MessageChain } from './mirai';
+import { Tweets } from './twitter';
 
 const writeOutTo = (path: string, data: Stream) =>
   new Promise<string>(resolve => {
@@ -206,7 +207,7 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
     })
 
   public webshot(
-    tweets,
+    tweets: Tweets,
     callback: (msgs: MessageChain, text: string, author: string) => void,
     webshotDelay: number
   ): Promise<void> {

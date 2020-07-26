@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Mirai, { MessageType } from 'mirai-ts';
-import Message from 'mirai-ts/dist/message';
+import MiraiMessage from 'mirai-ts/dist/message';
 
 import command from './helper';
 import { getLogger } from './loggers';
@@ -24,7 +24,7 @@ const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
 };
 
 export type MessageChain = MessageType.MessageChain;
-export const MiraiMessage = Message;
+export const Message = MiraiMessage;
 
 export default class {
 

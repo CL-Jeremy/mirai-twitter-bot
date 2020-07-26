@@ -119,10 +119,10 @@ class default_1 {
                                     if (count > maxCount && message.type === 'Image') {
                                         if (pos === 0) {
                                             logger.warn(`${count - 1} consecutive failures sending webshot, trying plain text instead...`);
-                                            msg[pos] = mirai_1.MiraiMessage.Plain(author + text);
+                                            msg[pos] = mirai_1.Message.Plain(author + text);
                                         }
                                         else {
-                                            msg[pos] = mirai_1.MiraiMessage.Plain(`[失败的图片：${message.path}]`);
+                                            msg[pos] = mirai_1.Message.Plain(`[失败的图片：${message.path}]`);
                                         }
                                     }
                                 });

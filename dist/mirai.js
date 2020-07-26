@@ -20,7 +20,7 @@ const ChatTypeMap = {
     FriendMessage: "private" /* Private */,
     TempMessage: "temp" /* Temp */,
 };
-exports.MiraiMessage = message_1.default;
+exports.Message = message_1.default;
 class default_1 {
     constructor(opt) {
         this.sendTo = (subscriber, msg, timeout = -1) => (() => {

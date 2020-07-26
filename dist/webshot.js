@@ -217,7 +217,7 @@ class Webshot extends CallableInstance {
                     });
                 }
                 if (this.mode > 0)
-                    messageChain.push(mirai_1.MiraiMessage.Plain(author + xmlEntities.decode(text)));
+                    messageChain.push(mirai_1.Message.Plain(author + xmlEntities.decode(text)));
             });
             // invoke webshot
             if (this.mode === 0) {
@@ -225,7 +225,7 @@ class Webshot extends CallableInstance {
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
                     .then(webshotFilePath => {
                     if (webshotFilePath)
-                        messageChain.push(mirai_1.MiraiMessage.Image('', '', baseName(webshotFilePath)));
+                        messageChain.push(mirai_1.Message.Image('', '', baseName(webshotFilePath)));
                 });
             }
             // fetch extra images
@@ -233,7 +233,7 @@ class Webshot extends CallableInstance {
                 if (originTwi.extended_entities) {
                     originTwi.extended_entities.media.forEach(media => promise = promise.then(() => this.fetchImage(media.media_url_https + ':orig', `${twi.user.screen_name}-${twi.id_str}--`)
                         .then(path => {
-                        messageChain.push(mirai_1.MiraiMessage.Image('', '', baseName(path)));
+                        messageChain.push(mirai_1.Message.Image('', '', baseName(path)));
                     })));
                 }
             }
@@ -245,7 +245,7 @@ class Webshot extends CallableInstance {
                             .filter(urlObj => urlObj.indices[0] < originTwi.display_text_range[1])
                             .map(urlObj => urlObj.expanded_url);
                         if (urls.length) {
-                            messageChain.push(mirai_1.MiraiMessage.Plain(urls.join('\n')));
+                            messageChain.push(mirai_1.Message.Plain(urls.join('\n')));
                         }
                     });
                 }
