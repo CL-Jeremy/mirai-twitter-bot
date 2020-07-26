@@ -1,5 +1,5 @@
 {
-  "name": "@CL-Jeremy/mirai-twitter-bot",
+  "name": "mirai-twitter-bot",
   "version": "0.1.3",
   "description": "Mirai Twitter Bot",
   "main": "./dist/main.js",
@@ -9,9 +9,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/CL-Jeremy/mirai-twitter-bot.git"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
   },
   "keywords": [
     "qq",
