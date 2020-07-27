@@ -61,7 +61,7 @@ https://twitter.com/rikakomoe/lists/lovelive`;
         lock.feed.push(link);
     if (!lock.threads[link]) {
         lock.threads[link] = {
-            offset: 0,
+            offset: '0',
             subscribers: [],
             updatedAt: '',
         };

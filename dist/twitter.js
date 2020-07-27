@@ -34,9 +34,10 @@ class default_1 {
                 this.work();
                 return;
             }
-            logger.debug(`pulling feed ${lock.feed[lock.workon]}`);
+            const currentFeed = lock.feed[lock.workon];
+            logger.debug(`pulling feed ${currentFeed}`);
             const promise = new Promise(resolve => {
-                let match = lock.feed[lock.workon].match(/https:\/\/twitter.com\/([^\/]+)\/lists\/([^\/]+)/);
+                let match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)\/lists\/([^\/]+)/);
                 let config;
                 let endpoint;
                 if (match) {
@@ -48,7 +49,7 @@ class default_1 {
                     endpoint = 'lists/statuses';
                 }
                 else {
-                    match = lock.feed[lock.workon].match(/https:\/\/twitter.com\/([^\/]+)/);
+                    match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)/);
                     if (match) {
                         config = {
                             screen_name: match[1],
@@ -59,20 +60,20 @@ class default_1 {
                     }
                 }
                 if (endpoint) {
-                    const offset = lock.threads[lock.feed[lock.workon]].offset;
+                    const offset = lock.threads[currentFeed].offset;
                     if (offset > 0)
                         config.since_id = offset;
                     this.client.get(endpoint, config, (error, tweets, response) => {
                         if (error) {
                             if (error instanceof Array && error.length > 0 && error[0].code === 34) {
-                                logger.warn(`error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
-                                lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
-                                    logger.info(`sending notfound message of ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
-                                    this.bot.sendTo(subscriber, `链接 ${lock.feed[lock.workon]} 指向的用户或列表不存在，请退订。`).catch();
+                                logger.warn(`error on fetching tweets for ${currentFeed}: ${JSON.stringify(error)}`);
+                                lock.threads[currentFeed].subscribers.forEach(subscriber => {
+                                    logger.info(`sending notfound message of ${currentFeed} to ${JSON.stringify(subscriber)}`);
+                                    this.bot.sendTo(subscriber, `链接 ${currentFeed} 指向的用户或列表不存在，请退订。`).catch();
                                 });
                             }
                             else {
-                                logger.error(`unhandled error on fetching tweets for ${lock.feed[lock.workon]}: ${JSON.stringify(error)}`);
+                                logger.error(`unhandled error on fetching tweets for ${currentFeed}: ${JSON.stringify(error)}`);
                             }
                             resolve();
                         }
@@ -82,16 +83,20 @@ class default_1 {
                 }
             });
             promise.then((tweets) => {
-                logger.debug(`api returned ${JSON.stringify(tweets)} for feed ${lock.feed[lock.workon]}`);
+                logger.debug(`api returned ${JSON.stringify(tweets)} for feed ${currentFeed}`);
+                const currentThread = lock.threads[currentFeed];
+                const updateDate = () => currentThread.updatedAt = new Date().toString();
                 if (!tweets || tweets.length === 0) {
-                    lock.threads[lock.feed[lock.workon]].updatedAt = new Date().toString();
+                    updateDate();
                     return;
                 }
-                if (lock.threads[lock.feed[lock.workon]].offset === -1) {
-                    lock.threads[lock.feed[lock.workon]].offset = tweets[0].id_str;
+                const topOfFeed = tweets[0].id_str;
+                const updateOffset = () => currentThread.offset = topOfFeed;
+                if (currentThread.offset === '-1') {
+                    updateOffset();
                     return;
                 }
-                if (lock.threads[lock.feed[lock.workon]].offset === 0)
+                if (currentThread.offset === '0')
                     tweets.splice(1);
                 const maxCount = 3;
                 let sendTimeout = 10000;
@@ -109,8 +114,8 @@ class default_1 {
                     }
                 };
                 const sendTweets = (msg, text, author) => {
-                    lock.threads[lock.feed[lock.workon]].subscribers.forEach(subscriber => {
-                        logger.info(`pushing data of thread ${lock.feed[lock.workon]} to ${JSON.stringify(subscriber)}`);
+                    currentThread.subscribers.forEach(subscriber => {
+                        logger.info(`pushing data of thread ${currentFeed} to ${JSON.stringify(subscriber)}`);
                         const retry = (reason, count) => {
                             if (count <= maxCount)
                                 sendTimeout *= (count + 2) / (count + 1);
@@ -133,11 +138,7 @@ class default_1 {
                         this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, 1));
                     });
                 };
-                return this.webshot(tweets, sendTweets, this.webshotDelay)
-                    .then(() => {
-                    lock.threads[lock.feed[lock.workon]].offset = tweets[0].id_str;
-                    lock.threads[lock.feed[lock.workon]].updatedAt = new Date().toString();
-                });
+                return this.webshot(tweets, sendTweets, this.webshotDelay).then(updateDate).then(updateOffset);
             })
                 .then(() => {
                 lock.workon++;

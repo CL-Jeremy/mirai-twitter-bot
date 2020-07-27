@@ -30,7 +30,7 @@ const logger = getLogger('webshot');
 const mkdirP = dir => { if (!existsSync(dir)) mkdirSync(dir, {recursive: true}); };
 const baseName = path => path.split(/[/\\]/).slice(-1)[0];
 
-class Webshot extends CallableInstance<[number], Promise<void>> {
+class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Promise<void>> {
 
   private browser: Browser;
   private outDir: string;
