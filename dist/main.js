@@ -115,7 +115,7 @@ else {
     }
 }
 Object.keys(lock.threads).forEach(key => {
-    lock.threads[key].offset = -1;
+    lock.threads[key].offset = '-1';
 });
 const qq = new mirai_1.default({
     access_token: config.mirai_access_token,

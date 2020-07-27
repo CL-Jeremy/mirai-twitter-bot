@@ -122,7 +122,7 @@ if (fs.existsSync(path.resolve(config.lockfile))) {
 }
 
 Object.keys(lock.threads).forEach(key => {
-  lock.threads[key].offset = -1;
+  lock.threads[key].offset = '-1';
 });
 
 const qq = new QQBot({

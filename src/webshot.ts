@@ -30,7 +30,7 @@ const logger = getLogger('webshot');
 const mkdirP = dir => { if (!existsSync(dir)) mkdirSync(dir, {recursive: true}); };
 const baseName = path => path.split(/[/\\]/).slice(-1)[0];
 
-class Webshot extends CallableInstance<[number], Promise<void>> {
+class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Promise<void>> {
 
   private browser: Browser;
   private outDir: string;
@@ -218,12 +218,11 @@ class Webshot extends CallableInstance<[number], Promise<void>> {
       promise = promise.then(() => {
         logger.info(`working on ${twi.user.screen_name}/${twi.id_str}`);
       });
-      const originTwi = twi.retweeted_status || twi;
+      const originTwi = twi;
       const messageChain: MessageChain = [];
 
       // text processing
-      let author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
-      if (twi.retweeted_status) author += `RT @${twi.retweeted_status.user.screen_name}: `;
+      const author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
 
       let text = originTwi.full_text;
 

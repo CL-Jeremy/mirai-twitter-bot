@@ -42,14 +42,13 @@ function parseLink(link) {
 }
 function sub(chat, args, lock, lockfile) {
     if (args.length === 0) {
-        return '找不到要订阅的链接。';
+        return '找不到要订阅媒体推文的链接。';
     }
     const match = parseLink(args[0]);
     if (!match) {
         return `订阅链接格式错误：
 示例：
-https://twitter.com/Saito_Shuka
-https://twitter.com/rikakomoe/lists/lovelive`;
+https://twitter.com/Saito_Shuka`;
     }
     const link = match.link;
     let flag = false;
@@ -61,7 +60,7 @@ https://twitter.com/rikakomoe/lists/lovelive`;
         lock.feed.push(link);
     if (!lock.threads[link]) {
         lock.threads[link] = {
-            offset: 0,
+            offset: '0',
             subscribers: [],
             updatedAt: '',
         };
@@ -75,12 +74,12 @@ https://twitter.com/rikakomoe/lists/lovelive`;
         lock.threads[link].subscribers.push(chat);
     logger.warn(`chat ${JSON.stringify(chat)} has subscribed ${link}`);
     fs.writeFileSync(path.resolve(lockfile), JSON.stringify(lock));
-    return `已为此聊天订阅 ${link}`;
+    return `已为此聊天订阅 ${link} 的媒体推文`;
 }
 exports.sub = sub;
 function unsub(chat, args, lock, lockfile) {
     if (args.length === 0) {
-        return '找不到要退订的链接。';
+        return '找不到要退订媒体推文的链接。';
     }
     const match = parseLink(args[0]);
     if (!match) {
@@ -88,7 +87,7 @@ function unsub(chat, args, lock, lockfile) {
     }
     const link = match.link;
     if (!lock.threads[link]) {
-        return '您没有订阅此链接。\n' + list(chat, args, lock);
+        return '您没有订阅此链接的媒体推文。\n' + list(chat, args, lock);
     }
     let flag = false;
     lock.threads[link].subscribers.forEach((c, index) => {
@@ -100,9 +99,9 @@ function unsub(chat, args, lock, lockfile) {
     if (flag) {
         fs.writeFileSync(path.resolve(lockfile), JSON.stringify(lock));
         logger.warn(`chat ${JSON.stringify(chat)} has unsubscribed ${link}`);
-        return `已为此聊天退订 ${link}`;
+        return `已为此聊天退订 ${link} 的媒体推文`;
     }
-    return '您没有订阅此链接。\n' + list(chat, args, lock);
+    return '您没有订阅此链接的媒体推文。\n' + list(chat, args, lock);
 }
 exports.unsub = unsub;
 function list(chat, args, lock) {
@@ -113,6 +112,6 @@ function list(chat, args, lock) {
                 links.push(`${key} ${datetime_1.relativeDate(lock.threads[key].updatedAt)}`);
         });
     });
-    return '此聊天中订阅的链接：\n' + links.join('\n');
+    return '此聊天中订阅媒体推文的链接：\n' + links.join('\n');
 }
 exports.list = list;

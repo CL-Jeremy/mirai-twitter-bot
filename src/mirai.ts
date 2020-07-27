@@ -78,23 +78,23 @@ export default class {
       }
       const cmdObj = command(msg.plain);
       switch (cmdObj.cmd) {
-        case 'twitter_sub':
-        case 'twitter_subscribe':
+        case 'twitterpic_sub':
+        case 'twitterpic_subscribe':
           msg.reply(this.botInfo.sub(chat, cmdObj.args));
           break;
-        case 'twitter_unsub':
-        case 'twitter_unsubscribe':
+        case 'twitterpic_unsub':
+        case 'twitterpic_unsubscribe':
           msg.reply(this.botInfo.unsub(chat, cmdObj.args));
           break;
         case 'ping':
-        case 'twitter':
+        case 'twitterpic':
           msg.reply(this.botInfo.list(chat, cmdObj.args));
           break;
         case 'help':
-          msg.reply(`推特搬运机器人：
-/twitter - 查询当前聊天中的订阅
-/twitter_subscribe [链接] - 订阅 Twitter 搬运
-/twitter_unsubscribe [链接] - 退订 Twitter 搬运`);
+          msg.reply(`推特图片搬运机器人：
+/twitterpic - 查询当前聊天中的订阅
+/twitterpic_subscribe [链接] - 订阅 Twitter 图片搬运
+/twitterpic_unsubscribe [链接] - 退订 Twitter 图片搬运`);
       }
     });
 }

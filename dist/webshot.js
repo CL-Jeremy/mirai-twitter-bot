@@ -198,12 +198,10 @@ class Webshot extends CallableInstance {
             promise = promise.then(() => {
                 logger.info(`working on ${twi.user.screen_name}/${twi.id_str}`);
             });
-            const originTwi = twi.retweeted_status || twi;
+            const originTwi = twi;
             const messageChain = [];
             // text processing
-            let author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
-            if (twi.retweeted_status)
-                author += `RT @${twi.retweeted_status.user.screen_name}: `;
+            const author = `${twi.user.name} (@${twi.user.screen_name}):\n`;
             let text = originTwi.full_text;
             promise = promise.then(() => {
                 if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
