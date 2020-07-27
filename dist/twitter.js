@@ -63,6 +63,8 @@ class default_1 {
                     const offset = lock.threads[currentFeed].offset;
                     if (offset > 0)
                         config.since_id = offset;
+                    if (offset < -1)
+                        config.max_id = offset.slice(1);
                     this.client.get(endpoint, config, (error, tweets, response) => {
                         if (error) {
                             if (error instanceof Array && error.length > 0 && error[0].code === 34) {
@@ -91,19 +93,29 @@ class default_1 {
                     return;
                 }
                 const topOfFeed = tweets[0].id_str;
-                const updateOffset = () => currentThread.offset = topOfFeed;
+                logger.info(`current offset: ${currentThread.offset}, current top of feed: ${topOfFeed}`);
+                const bottomOfFeed = tweets[tweets.length - 1].id_str;
+                const setOffset = (offset) => currentThread.offset = offset;
+                const updateOffset = () => setOffset(topOfFeed);
                 tweets = tweets.filter(twi => !twi.retweeted_status && twi.extended_entities);
+                logger.info(`found ${tweets.length} tweets with extended entities`);
+                if (currentThread.offset === '-1') {
+                    updateOffset();
+                    return;
+                }
+                if (currentThread.offset <= 0) {
+                    if (tweets.length === 0) {
+                        setOffset('-' + bottomOfFeed);
+                        lock.workon--;
+                        return;
+                    }
+                    tweets.splice(1);
+                }
                 if (tweets.length === 0) {
                     updateDate();
                     updateOffset();
                     return;
                 }
-                if (currentThread.offset === '-1') {
-                    updateOffset();
-                    return;
-                }
-                if (currentThread.offset === '0')
-                    tweets.splice(1);
                 const maxCount = 3;
                 let sendTimeout = 10000;
                 const retryTimeout = 1500;

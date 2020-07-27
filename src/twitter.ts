@@ -126,6 +126,7 @@ export default class {
       if (endpoint) {
         const offset = lock.threads[currentFeed].offset as unknown as number;
         if (offset > 0) config.since_id = offset;
+        if (offset < -1) config.max_id = (offset as unknown as string).slice(1) as unknown as number;
         this.client.get(endpoint, config, (error, tweets, response) => {
           if (error) {
             if (error instanceof Array && error.length > 0 && error[0].code === 34) {
@@ -151,12 +152,18 @@ export default class {
       if (!tweets || tweets.length === 0) { updateDate(); return; }
 
       const topOfFeed = tweets[0].id_str;
-      const updateOffset = () => currentThread.offset = topOfFeed;
+      logger.info(`current offset: ${currentThread.offset}, current top of feed: ${topOfFeed}`);
+      const bottomOfFeed = tweets[tweets.length - 1].id_str;
+      const setOffset = (offset: string) => currentThread.offset = offset;
+      const updateOffset = () => setOffset(topOfFeed);
       tweets = tweets.filter(twi => !twi.retweeted_status && twi.extended_entities);
-      if (tweets.length === 0) { updateDate(); updateOffset(); return; }
-
+      logger.info(`found ${tweets.length} tweets with extended entities`);
       if (currentThread.offset === '-1') { updateOffset(); return; }
-      if (currentThread.offset === '0') tweets.splice(1);
+      if (currentThread.offset as unknown as number <= 0) {
+        if (tweets.length === 0) { setOffset('-' + bottomOfFeed); lock.workon--; return; }
+        tweets.splice(1);
+      }
+      if (tweets.length === 0) { updateDate(); updateOffset(); return; }
 
       const maxCount = 3;
       let sendTimeout = 10000;
