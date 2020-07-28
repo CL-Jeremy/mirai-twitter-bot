@@ -27,7 +27,7 @@ const sections = [
     header: 'Documentation',
     content: [
       'Project home: {underline https://github.com/CL-Jeremy/mirai-twitter-bot}',
-      'Example config: {underline https://github.com/CL-Jeremy/mirai-twitter-bot/blob/master/config.example.json}',
+      'Example config: {underline https://git.io/JJ0jN}',
     ],
   },
 ];
@@ -86,6 +86,9 @@ if (config.loglevel === undefined) {
 if (typeof config.mode !== 'number') {
   config.mode = 0;
 }
+if (typeof config.resume_on_start !== 'boolean') {
+  config.resume_on_start = false;
+}
 
 setLogLevels(config.loglevel);
 
@@ -121,9 +124,11 @@ if (fs.existsSync(path.resolve(config.lockfile))) {
   }
 }
 
-Object.keys(lock.threads).forEach(key => {
-  lock.threads[key].offset = '-1';
-});
+if (!config.resume_on_start) {
+  Object.keys(lock.threads).forEach(key => {
+    lock.threads[key].offset = '-1';
+  });
+}
 
 const qq = new QQBot({
   access_token: config.mirai_access_token,
@@ -145,7 +150,6 @@ const worker = new Worker({
   workInterval: config.work_interval,
   bot: qq,
   webshotDelay: config.webshot_delay,
-  webshotOutDir: config.mirai_http_base_dir + '/images',
   mode: config.mode,
 });
 worker.launch();

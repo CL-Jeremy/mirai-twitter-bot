@@ -1,21 +1,15 @@
 import axios from 'axios';
 import * as CallableInstance from 'callable-instance';
-import { createWriteStream, existsSync, mkdirSync } from 'fs';
 import { XmlEntities } from 'html-entities';
 import { PNG } from 'pngjs';
 import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import * as sharp from 'sharp';
-import { Stream } from 'stream';
+import { Readable } from 'stream';
 
 import { getLogger } from './loggers';
 import { Message, MessageChain } from './mirai';
 import { Tweets } from './twitter';
-
-const writeOutTo = (path: string, data: Stream) =>
-  new Promise<string>(resolve => {
-    data.pipe(createWriteStream(path)).on('close', () => resolve(path));
-  });
 
 const xmlEntities = new XmlEntities();
 
@@ -27,18 +21,17 @@ const typeInZH = {
 
 const logger = getLogger('webshot');
 
-const mkdirP = dir => { if (!existsSync(dir)) mkdirSync(dir, {recursive: true}); };
-const baseName = path => path.split(/[/\\]/).slice(-1)[0];
-
-class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Promise<void>> {
+class Webshot
+extends CallableInstance<
+  [Tweets, (...args) => Promise<any>, (...args) => void, number],
+  Promise<void>
+> {
 
   private browser: Browser;
-  private outDir: string;
   private mode: number;
 
-  constructor(outDir: string, mode: number, onready?: () => any) {
+  constructor(mode: number, onready?: () => any) {
     super('webshot');
-    mkdirP(this.outDir = outDir);
     // tslint:disable-next-line: no-conditional-assignment
     if (this.mode = mode) {
       onready();
@@ -64,9 +57,11 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
   }
 
   private renderWebshot = (url: string, height: number, webshotDelay: number): Promise<string> => {
-    const jpeg = (data: Stream) => data.pipe(sharp()).jpeg({quality: 90, trellisQuantisation: true});
-    const writeOutPic = (pic: Stream) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.jpg`, pic);
-    const promise = new Promise<{ path: string, boundary: null | number }>((resolve, reject) => {
+    const jpeg = (data: Readable) => data.pipe(sharp()).jpeg({quality: 90, trellisQuantisation: true});
+    const sharpToBase64 = (pic: sharp.Sharp) => new Promise<string>(resolve => {
+      pic.toBuffer().then(buffer => resolve(`data:image/jpg;base64,${buffer.toString('base64')}`));
+    });
+    const promise = new Promise<{ base64: string, boundary: null | number }>((resolve, reject) => {
       const width = 720;
       const zoomFactor = 2;
       logger.info(`shooting ${width}*${height} webshot for ${url}`);
@@ -154,18 +149,18 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
                     this.height = boundary;
                   }
 
-                  writeOutPic(jpeg(this.pack())).then(path => {
+                  sharpToBase64(jpeg(this.pack())).then(base64 => {
                     logger.info(`finished webshot for ${url}`);
-                    resolve({path, boundary});
+                    resolve({base64, boundary});
                   });
                 } else if (height >= 8 * 1920) {
                   logger.warn('too large, consider as a bug, returning');
-                  writeOutPic(jpeg(this.pack())).then(path => {
-                    resolve({path, boundary: 0});
+                  sharpToBase64(jpeg(this.pack())).then(base64 => {
+                    resolve({base64, boundary: 0});
                   });
                 } else {
                   logger.info('unable to find boundary, try shooting a larger image');
-                  resolve({path: '', boundary});
+                  resolve({base64: '', boundary});
                 }
               }).parse(screenshot);
             })
@@ -175,20 +170,20 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
     });
     return promise.then(data => {
       if (data.boundary === null) return this.renderWebshot(url, height + 1920, webshotDelay);
-      else return data.path;
+      else return data.base64;
     }).catch(error =>
       new Promise(resolve => this.reconnect(error, resolve))
       .then(() => this.renderWebshot(url, height, webshotDelay))
     );
   }
 
-  private fetchImage = (url: string, tag: string): Promise<string> =>
-    new Promise<Stream>(resolve => {
+  private fetchImage = (url: string): Promise<string> =>
+    new Promise<ArrayBuffer>(resolve => {
       logger.info(`fetching ${url}`);
       axios({
         method: 'get',
         url,
-        responseType: 'stream',
+        responseType: 'arraybuffer',
       }).then(res => {
         if (res.status === 200) {
             logger.info(`successfully fetched ${url}`);
@@ -202,12 +197,25 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
         resolve();
       });
     }).then(data => {
-      const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+):(.*)/, '$1__$2$1'))}`;
-      return writeOutTo(`${this.outDir}/${imgName}`, data);
+      const mimetype = (ext => {
+        switch (ext) {
+          case 'jpg':
+            return 'image/jpeg';
+          case 'png':
+            return 'image/png';
+          case 'gif':
+            return 'image/gif';
+        }
+      })(url.match(/(\.[a-z]+):(.*)/)[1]);
+      return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
     })
 
   public webshot(
     tweets: Tweets,
+    uploader: (
+      img: ReturnType<typeof Message.Image>,
+      lastResort: (...args) => ReturnType<typeof Message.Plain>)
+      => Promise<ReturnType<typeof Message.Image | typeof Message.Plain>>,
     callback: (msgs: MessageChain, text: string, author: string) => void,
     webshotDelay: number
   ): Promise<void> {
@@ -244,20 +252,28 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
       if (this.mode === 0) {
         const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
         promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
-          .then(webshotFilePath => {
-            if (webshotFilePath) messageChain.push(Message.Image('', '', baseName(webshotFilePath)));
+          .then(base64url => {
+            if (base64url) {
+              return uploader(Message.Image('', base64url, url), () => Message.Plain(author + text));
+            }
+          })
+          .then(msg => {
+            if (msg) messageChain.push(msg);
           });
       }
       // fetch extra images
       if (1 - this.mode % 2) {
         if (originTwi.extended_entities) {
-          originTwi.extended_entities.media.forEach(media =>
-            promise = promise.then(() =>
-              this.fetchImage(media.media_url_https + ':orig', `${twi.user.screen_name}-${twi.id_str}--`)
-              .then(path => {
-                messageChain.push(Message.Image('', '', baseName(path)));
-              })
-          ));
+          originTwi.extended_entities.media.forEach(media => {
+            const url = media.media_url_https + ':orig';
+            promise = promise.then(() => this.fetchImage(url))
+              .then(base64url =>
+                uploader(Message.Image('', base64url, url), () => Message.Plain(`[失败的图片：${url}]`))
+              )
+              .then(msg => {
+                messageChain.push(msg);
+              });
+          });
         }
       }
       // append URLs, if any
@@ -275,7 +291,12 @@ class Webshot extends CallableInstance<[Tweets, (...args) => void, number], Prom
       }
       promise.then(() => {
         logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
-        logger.info(JSON.stringify(messageChain));
+        logger.info(JSON.stringify(messageChain.map(message => {
+          if (message.type === 'Image' && message.url.startsWith('data:')) {
+            return Message.Image(message.imageId, 'data:[...]', message.path);
+          }
+          return message;
+        })));
         callback(messageChain, xmlEntities.decode(text), author);
       });
     });

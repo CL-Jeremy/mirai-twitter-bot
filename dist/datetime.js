@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.relativeDate = void 0;
 function relativeDate(dtstr) {
     if (!dtstr)
         return '暂无数据';

@@ -4,13 +4,12 @@ const fs = require("fs");
 const path = require("path");
 const Twitter = require("twitter");
 const loggers_1 = require("./loggers");
-const mirai_1 = require("./mirai");
 const webshot_1 = require("./webshot");
 const logger = loggers_1.getLogger('twitter');
 class default_1 {
     constructor(opt) {
         this.launch = () => {
-            this.webshot = new webshot_1.default(this.webshotOutDir, this.mode, () => setTimeout(this.work, this.workInterval * 1000));
+            this.webshot = new webshot_1.default(this.mode, () => setTimeout(this.work, this.workInterval * 1000));
         };
         this.work = () => {
             const lock = this.lock;
@@ -117,8 +116,8 @@ class default_1 {
                     return;
                 }
                 const maxCount = 3;
-                let sendTimeout = 10000;
-                const retryTimeout = 1500;
+                const uploadTimeout = 10000;
+                const retryInterval = 1500;
                 const ordinal = (n) => {
                     switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
                         case 1:
@@ -131,32 +130,47 @@ class default_1 {
                             return `${n}th`;
                     }
                 };
+                const retryOnError = (doWork, onRetry) => new Promise(resolve => {
+                    const retry = (reason, count) => {
+                        setTimeout(() => {
+                            let terminate = false;
+                            onRetry(reason, count, defaultValue => { terminate = true; resolve(defaultValue); });
+                            if (!terminate)
+                                doWork().then(resolve).catch(error => retry(error, count + 1));
+                        }, retryInterval);
+                    };
+                    doWork().then(resolve).catch(error => retry(error, 1));
+                });
+                const uploader = (message, lastResort) => {
+                    let timeout = uploadTimeout;
+                    return retryOnError(() => this.bot.uploadPic(message, timeout).then(() => message), (_, count, terminate) => {
+                        if (count <= maxCount) {
+                            timeout *= (count + 2) / (count + 1);
+                            logger.warn(`retry uploading for the ${ordinal(count)} time...`);
+                        }
+                        else {
+                            logger.warn(`${count - 1} consecutive failures while uploading, trying plain text instead...`);
+                            terminate(lastResort());
+                        }
+                    });
+                };
                 const sendTweets = (msg, text, author) => {
                     currentThread.subscribers.forEach(subscriber => {
                         logger.info(`pushing data of thread ${currentFeed} to ${JSON.stringify(subscriber)}`);
-                        const retry = (reason, count) => {
-                            if (count <= maxCount)
-                                sendTimeout *= (count + 2) / (count + 1);
-                            setTimeout(() => {
-                                msg.forEach((message, pos) => {
-                                    if (count > maxCount && message.type === 'Image') {
-                                        if (pos === 0) {
-                                            logger.warn(`${count - 1} consecutive failures sending webshot, trying plain text instead...`);
-                                            msg[pos] = mirai_1.Message.Plain(author + text);
-                                        }
-                                        else {
-                                            msg[pos] = mirai_1.Message.Plain(`[失败的图片：${message.path}]`);
-                                        }
-                                    }
-                                });
+                        retryOnError(() => this.bot.sendTo(subscriber, msg), (_, count, terminate) => {
+                            if (count <= maxCount) {
                                 logger.warn(`retry sending to ${subscriber.chatID} for the ${ordinal(count)} time...`);
-                                this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, count + 1));
-                            }, retryTimeout);
-                        };
-                        this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, 1));
+                            }
+                            else {
+                                logger.warn(`${count - 1} consecutive failures while sending` +
+                                    'message chain, trying plain text instead...');
+                                terminate(this.bot.sendTo(subscriber, author + text));
+                            }
+                        });
                     });
                 };
-                return this.webshot(tweets, sendTweets, this.webshotDelay).then(updateDate).then(updateOffset);
+                return this.webshot(tweets, uploader, sendTweets, this.webshotDelay)
+                    .then(updateDate).then(updateOffset);
             })
                 .then(() => {
                 lock.workon++;
@@ -180,7 +194,6 @@ class default_1 {
         this.workInterval = opt.workInterval;
         this.bot = opt.bot;
         this.webshotDelay = opt.webshotDelay;
-        this.webshotOutDir = opt.webshotOutDir;
         this.mode = opt.mode;
     }
 }

@@ -13,7 +13,6 @@ interface IWorkerOption {
   bot: QQBot;
   workInterval: number;
   webshotDelay: number;
-  webshotOutDir: string;
   consumer_key: string;
   consumer_secret: string;
   access_token_key: string;
@@ -48,7 +47,6 @@ export default class {
   private workInterval: number;
   private bot: QQBot;
   private webshotDelay: number;
-  private webshotOutDir: string;
   private webshot: Webshot;
   private mode: number;
 
@@ -64,13 +62,11 @@ export default class {
     this.workInterval = opt.workInterval;
     this.bot = opt.bot;
     this.webshotDelay = opt.webshotDelay;
-    this.webshotOutDir = opt.webshotOutDir;
     this.mode = opt.mode;
   }
 
   public launch = () => {
     this.webshot = new Webshot(
-      this.webshotOutDir,
       this.mode,
       () => setTimeout(this.work, this.workInterval * 1000)
     );
@@ -166,8 +162,8 @@ export default class {
       if (tweets.length === 0) { updateDate(); updateOffset(); return; }
 
       const maxCount = 3;
-      let sendTimeout = 10000;
-      const retryTimeout = 1500;
+      const uploadTimeout = 10000;
+      const retryInterval = 1500;
       const ordinal = (n: number) => {
         switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
           case 1:
@@ -180,30 +176,57 @@ export default class {
             return `${n}th`;
         }
       };
+
+      const retryOnError = <T, U>(
+        doWork: () => Promise<T>,
+        onRetry: (error, count: number, terminate: (defaultValue: U) => void) => void
+      ) => new Promise<T | U>(resolve => {
+        const retry = (reason, count: number) => {
+          setTimeout(() => {
+            let terminate = false;
+            onRetry(reason, count, defaultValue => { terminate = true; resolve(defaultValue); });
+            if (!terminate) doWork().then(resolve).catch(error => retry(error, count + 1));
+          }, retryInterval);
+        };
+        doWork().then(resolve).catch(error => retry(error, 1));
+      });
+
+      const uploader = (
+        message: ReturnType<typeof Message.Image>,
+        lastResort: (...args) => ReturnType<typeof Message.Plain>
+      ) => {
+        let timeout = uploadTimeout;
+        return retryOnError(() =>
+          this.bot.uploadPic(message, timeout).then(() => message),
+        (_, count, terminate: (defaultValue: ReturnType<typeof Message.Plain>) => void) => {
+          if (count <= maxCount) {
+            timeout *= (count + 2) / (count + 1);
+            logger.warn(`retry uploading for the ${ordinal(count)} time...`);
+          } else {
+            logger.warn(`${count - 1} consecutive failures while uploading, trying plain text instead...`);
+            terminate(lastResort());
+          }
+        });
+      };
+
       const sendTweets = (msg: MessageChain, text: string, author: string) => {
         currentThread.subscribers.forEach(subscriber => {
           logger.info(`pushing data of thread ${currentFeed} to ${JSON.stringify(subscriber)}`);
-          const retry = (reason, count: number) => { // workaround for https://github.com/mamoe/mirai/issues/194
-            if (count <= maxCount) sendTimeout *= (count + 2) / (count + 1);
-            setTimeout(() => {
-              (msg as MessageChain).forEach((message, pos) => {
-                if (count > maxCount && message.type === 'Image') {
-                  if (pos === 0) {
-                    logger.warn(`${count - 1} consecutive failures sending webshot, trying plain text instead...`);
-                    msg[pos] = Message.Plain(author + text);
-                  } else {
-                    msg[pos] = Message.Plain(`[失败的图片：${message.path}]`);
-                  }
-                }
-              });
+          retryOnError(
+            () => this.bot.sendTo(subscriber, msg),
+          (_, count, terminate: (doNothing: Promise<void>) => void) => {
+            if (count <= maxCount) {
               logger.warn(`retry sending to ${subscriber.chatID} for the ${ordinal(count)} time...`);
-              this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, count + 1));
-            }, retryTimeout);
-          };
-          this.bot.sendTo(subscriber, msg, sendTimeout).catch(error => retry(error, 1));
+            } else {
+              logger.warn(`${count - 1} consecutive failures while sending` +
+                'message chain, trying plain text instead...');
+              terminate(this.bot.sendTo(subscriber, author + text));
+            }
+          });
         });
       };
-      return this.webshot(tweets, sendTweets, this.webshotDelay).then(updateDate).then(updateOffset);
+      return this.webshot(tweets, uploader, sendTweets, this.webshotDelay)
+      .then(updateDate).then(updateOffset);
     })
       .then(() => {
         lock.workon++;
@@ -214,6 +237,5 @@ export default class {
           this.work();
         }, timeout);
       });
-
   }
 }

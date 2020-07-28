@@ -2,16 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
 const CallableInstance = require("callable-instance");
-const fs_1 = require("fs");
 const html_entities_1 = require("html-entities");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
 const sharp = require("sharp");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
-const writeOutTo = (path, data) => new Promise(resolve => {
-    data.pipe(fs_1.createWriteStream(path)).on('close', () => resolve(path));
-});
 const xmlEntities = new html_entities_1.XmlEntities();
 const typeInZH = {
     photo: '[图片]',
@@ -19,11 +15,8 @@ const typeInZH = {
     animated_gif: '[GIF]',
 };
 const logger = loggers_1.getLogger('webshot');
-const mkdirP = dir => { if (!fs_1.existsSync(dir))
-    fs_1.mkdirSync(dir, { recursive: true }); };
-const baseName = path => path.split(/[/\\]/).slice(-1)[0];
 class Webshot extends CallableInstance {
-    constructor(outDir, mode, onready) {
+    constructor(mode, onready) {
         super('webshot');
         // use local Chromium
         this.connect = (onready) => puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' })
@@ -42,7 +35,9 @@ class Webshot extends CallableInstance {
         };
         this.renderWebshot = (url, height, webshotDelay) => {
             const jpeg = (data) => data.pipe(sharp()).jpeg({ quality: 90, trellisQuantisation: true });
-            const writeOutPic = (pic) => writeOutTo(`${this.outDir}/${url.replace(/[:\/]/g, '_')}.jpg`, pic);
+            const sharpToBase64 = (pic) => new Promise(resolve => {
+                pic.toBuffer().then(buffer => resolve(`data:image/jpg;base64,${buffer.toString('base64')}`));
+            });
             const promise = new Promise((resolve, reject) => {
                 const width = 720;
                 const zoomFactor = 2;
@@ -129,20 +124,20 @@ class Webshot extends CallableInstance {
                                     this.data = this.data.slice(0, idx(this.width, boundary));
                                     this.height = boundary;
                                 }
-                                writeOutPic(jpeg(this.pack())).then(path => {
+                                sharpToBase64(jpeg(this.pack())).then(base64 => {
                                     logger.info(`finished webshot for ${url}`);
-                                    resolve({ path, boundary });
+                                    resolve({ base64, boundary });
                                 });
                             }
                             else if (height >= 8 * 1920) {
                                 logger.warn('too large, consider as a bug, returning');
-                                writeOutPic(jpeg(this.pack())).then(path => {
-                                    resolve({ path, boundary: 0 });
+                                sharpToBase64(jpeg(this.pack())).then(base64 => {
+                                    resolve({ base64, boundary: 0 });
                                 });
                             }
                             else {
                                 logger.info('unable to find boundary, try shooting a larger image');
-                                resolve({ path: '', boundary });
+                                resolve({ base64: '', boundary });
                             }
                         }).parse(screenshot);
                     })
@@ -154,16 +149,16 @@ class Webshot extends CallableInstance {
                 if (data.boundary === null)
                     return this.renderWebshot(url, height + 1920, webshotDelay);
                 else
-                    return data.path;
+                    return data.base64;
             }).catch(error => new Promise(resolve => this.reconnect(error, resolve))
                 .then(() => this.renderWebshot(url, height, webshotDelay)));
         };
-        this.fetchImage = (url, tag) => new Promise(resolve => {
+        this.fetchImage = (url) => new Promise(resolve => {
             logger.info(`fetching ${url}`);
             axios_1.default({
                 method: 'get',
                 url,
-                responseType: 'stream',
+                responseType: 'arraybuffer',
             }).then(res => {
                 if (res.status === 200) {
                     logger.info(`successfully fetched ${url}`);
@@ -178,10 +173,18 @@ class Webshot extends CallableInstance {
                 resolve();
             });
         }).then(data => {
-            const imgName = `${tag}${baseName(url.replace(/(\.[a-z]+):(.*)/, '$1__$2$1'))}`;
-            return writeOutTo(`${this.outDir}/${imgName}`, data);
+            const mimetype = (ext => {
+                switch (ext) {
+                    case 'jpg':
+                        return 'image/jpeg';
+                    case 'png':
+                        return 'image/png';
+                    case 'gif':
+                        return 'image/gif';
+                }
+            })(url.match(/(\.[a-z]+):(.*)/)[1]);
+            return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
         });
-        mkdirP(this.outDir = outDir);
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
             onready();
@@ -190,7 +193,7 @@ class Webshot extends CallableInstance {
             this.connect(onready);
         }
     }
-    webshot(tweets, callback, webshotDelay) {
+    webshot(tweets, uploader, callback, webshotDelay) {
         let promise = new Promise(resolve => {
             resolve();
         });
@@ -221,18 +224,27 @@ class Webshot extends CallableInstance {
             if (this.mode === 0) {
                 const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
-                    .then(webshotFilePath => {
-                    if (webshotFilePath)
-                        messageChain.push(mirai_1.Message.Image('', '', baseName(webshotFilePath)));
+                    .then(base64url => {
+                    if (base64url) {
+                        return uploader(mirai_1.Message.Image('', base64url, url), () => mirai_1.Message.Plain(author + text));
+                    }
+                })
+                    .then(msg => {
+                    if (msg)
+                        messageChain.push(msg);
                 });
             }
             // fetch extra images
             if (1 - this.mode % 2) {
                 if (originTwi.extended_entities) {
-                    originTwi.extended_entities.media.forEach(media => promise = promise.then(() => this.fetchImage(media.media_url_https + ':orig', `${twi.user.screen_name}-${twi.id_str}--`)
-                        .then(path => {
-                        messageChain.push(mirai_1.Message.Image('', '', baseName(path)));
-                    })));
+                    originTwi.extended_entities.media.forEach(media => {
+                        const url = media.media_url_https + ':orig';
+                        promise = promise.then(() => this.fetchImage(url))
+                            .then(base64url => uploader(mirai_1.Message.Image('', base64url, url), () => mirai_1.Message.Plain(`[失败的图片：${url}]`)))
+                            .then(msg => {
+                            messageChain.push(msg);
+                        });
+                    });
                 }
             }
             // append URLs, if any
@@ -250,7 +262,12 @@ class Webshot extends CallableInstance {
             }
             promise.then(() => {
                 logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
-                logger.info(JSON.stringify(messageChain));
+                logger.info(JSON.stringify(messageChain.map(message => {
+                    if (message.type === 'Image' && message.url.startsWith('data:')) {
+                        return mirai_1.Message.Image(message.imageId, 'data:[...]', message.path);
+                    }
+                    return message;
+                })));
                 callback(messageChain, xmlEntities.decode(text), author);
             });
         });
