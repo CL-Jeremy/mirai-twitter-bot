@@ -6,7 +6,7 @@
 
 ## 主要区别
 
-- 去除了 Redis，发送的图片会在本地缓存（请视情况删除）
+- 去除了 Redis
 - 图片使用 [sharp](https://github.com/lovell/sharp) 压缩为 JPEG
 - 机器人的 QQ 号码必须手动填写
 
@@ -19,7 +19,6 @@
 | mirai_access_token | Mirai HTTP API authKey（需保持和插件一致，插件在未配置对应<br />项目时会在 console 给出当前设定值，请将该值填在此处） | （必填） |
 | mirai_http_host | Mirai HTTP API 插件服务端地址 | 127.0.0.1 |
 | mirai_http_port | Mirai HTTP API 插件服务端口 | 8080 |
-| mirai_http_base_dir | Mirai HTTP API 插件起始目录，图片会保存到此目录下的 /images <br />文件夹中。默认设定认为用户已将本应用安装到同一目录下 | .（本应用的工作目录） |
 | mirai_bot_qq | Mirai HTTP API 登录的目标机器人 QQ 号 | 10000（示例值，必填） |
 | twitter_consumer_key | Twitter App consumer_key | （必填） |
 | twitter_consumer_secret |  Twitter App consumer_secret | （必填） |
@@ -40,5 +39,5 @@
 
 ## Todo
 
-- 重新实现基于 hash 的文件缓存，设定自动清理陈旧图片
+- 重新实现基于 hash 的文件缓存
 - 添加选项对时间线进行过滤

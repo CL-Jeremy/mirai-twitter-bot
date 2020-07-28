@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.setLogLevels = exports.getLogger = void 0;
 const log4js_1 = require("log4js");
 const loggers = [];
 function getLogger(category) {
@@ -10,6 +11,6 @@ function getLogger(category) {
 }
 exports.getLogger = getLogger;
 function setLogLevels(level) {
-    loggers.forEach((l) => l.level = (level !== null && level !== void 0 ? level : 'info'));
+    loggers.forEach((l) => l.level = level !== null && level !== void 0 ? level : 'info');
 }
 exports.setLogLevels = setLogLevels;

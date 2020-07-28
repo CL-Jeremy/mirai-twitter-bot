@@ -27,7 +27,7 @@ const sections = [
     header: 'Documentation',
     content: [
       'Project home: {underline https://github.com/CL-Jeremy/mirai-twitter-bot}',
-      'Example config: {underline https://github.com/CL-Jeremy/mirai-twitter-bot/blob/master/config.example.json}',
+      'Example config: {underline https://git.io/JJ0jN}',
     ],
   },
 ];
@@ -145,7 +145,6 @@ const worker = new Worker({
   workInterval: config.work_interval,
   bot: qq,
   webshotDelay: config.webshot_delay,
-  webshotOutDir: config.mirai_http_base_dir + '/images',
   mode: config.mode,
 });
 worker.launch();
