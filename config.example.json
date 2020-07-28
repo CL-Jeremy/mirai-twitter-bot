@@ -8,6 +8,7 @@
   "twitter_access_token_key": "",
   "twitter_access_token_secret": "",
   "mode": 0,
+  "resume_on_start": false,
   "work_interval": 60,
   "webshot_delay": 5000,
   "lockfile": "subscriber.lock",

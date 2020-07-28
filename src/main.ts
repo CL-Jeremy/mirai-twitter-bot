@@ -86,6 +86,9 @@ if (config.loglevel === undefined) {
 if (typeof config.mode !== 'number') {
   config.mode = 0;
 }
+if (typeof config.resume_on_start !== 'boolean') {
+  config.resume_on_start = false;
+}
 
 setLogLevels(config.loglevel);
 
@@ -121,9 +124,11 @@ if (fs.existsSync(path.resolve(config.lockfile))) {
   }
 }
 
-Object.keys(lock.threads).forEach(key => {
-  lock.threads[key].offset = '-1';
-});
+if (!config.resume_on_start) {
+  Object.keys(lock.threads).forEach(key => {
+    lock.threads[key].offset = '-1';
+  });
+}
 
 const qq = new QQBot({
   access_token: config.mirai_access_token,
