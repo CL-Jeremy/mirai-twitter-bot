@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.unsub = exports.list = exports.sub = void 0;
 const fs = require("fs");
 const path = require("path");
 const datetime_1 = require("./datetime");
@@ -61,7 +62,7 @@ https://twitter.com/rikakomoe/lists/lovelive`;
         lock.feed.push(link);
     if (!lock.threads[link]) {
         lock.threads[link] = {
-            offset: 0,
+            offset: '0',
             subscribers: [],
             updatedAt: '',
         };

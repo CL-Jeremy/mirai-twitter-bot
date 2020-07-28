@@ -1,6 +1,7 @@
 import axios from 'axios';
 import Mirai, { MessageType } from 'mirai-ts';
-import Message from 'mirai-ts/dist/message';
+import MiraiMessage from 'mirai-ts/dist/message';
+import * as temp from 'temp';
 
 import command from './helper';
 import { getLogger } from './loggers';
@@ -24,29 +25,20 @@ const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
 };
 
 export type MessageChain = MessageType.MessageChain;
-export const MiraiMessage = Message;
+export const Message = MiraiMessage;
 
 export default class {
 
   private botInfo: IQQProps;
   public bot: Mirai;
 
-  public sendTo = (subscriber: IChat, msg: string | MessageChain, timeout = -1) =>
+  public sendTo = (subscriber: IChat, msg: string | MessageChain) =>
     (() => {
-      if (timeout) timeout = Math.floor(timeout);
-      if (timeout === 0 || timeout < -1) {
-        return Promise.reject('Error: timeout must be greater than 0ms');
-      }
-      try {
-        this.bot.axios.defaults.timeout = timeout === -1 ? 0 : timeout;
-        switch (subscriber.chatType) {
-          case 'group':
-            return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
-          case 'private':
-            return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
-        }
-      } finally {
-        this.bot.axios.defaults.timeout = 0;
+      switch (subscriber.chatType) {
+        case 'group':
+          return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
+        case 'private':
+          return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
       }
     })()
     .then(response => {
@@ -57,6 +49,50 @@ export default class {
       logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
       throw Error(reason);
     })
+
+  public uploadPic = (img: MessageType.Image, timeout = -1) => {
+    if (timeout) timeout = Math.floor(timeout);
+    if (timeout === 0 || timeout < -1) {
+      return Promise.reject('Error: timeout must be greater than 0ms');
+    }
+    let imgFile: string;
+    if (img.imageId !== '') return Promise.resolve();
+    if (img.url !== '') {
+      if (img.url.split(':')[0] !== 'data') {
+        return Promise.reject('Error: URL must be of protocol "data"');
+      }
+      if (img.url.split(',')[0].split(';')[1] !== 'base64') {
+        return Promise.reject('Error: data URL must be of encoding "base64"');
+      }
+      temp.track();
+      try {
+        const tempFileStream = temp.createWriteStream();
+        tempFileStream.write(img.url.split(',')[1], 'base64');
+        tempFileStream.end();
+        if (typeof(tempFileStream.path) === 'string') imgFile = tempFileStream.path;
+      } catch (error) {
+        logger.error(error);
+      }
+    }
+    try {
+      this.bot.axios.defaults.timeout = timeout === -1 ? 0 : timeout;
+      logger.info(`uploading ${img.path}...`);
+      return this.bot.api.uploadImage('group', imgFile || img.path)
+      .then(response => { // workaround for https://github.com/mamoe/mirai/issues/194
+        logger.info(`uploading ${img.path} as group image was successful, response:`);
+        logger.info(JSON.stringify(response));
+        img.url = '';
+        img.path = (response.path as string).split(/[/\\]/).slice(-1)[0];
+      })
+      .catch(reason => {
+        logger.error(`error uploading ${img.path}, reason: ${reason}`);
+        throw Error(reason);
+      });
+    } finally {
+      temp.cleanup();
+      this.bot.axios.defaults.timeout = 0;
+    }
+  }
 
   private initBot = () => {
     this.bot = new Mirai({

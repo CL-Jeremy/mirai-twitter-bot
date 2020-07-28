@@ -16,7 +16,7 @@ interface ILock {
   threads: {
     [key: string]:
       {
-        offset: number,
+        offset: string,
         updatedAt: string,
         subscribers: IChat[],
       }
