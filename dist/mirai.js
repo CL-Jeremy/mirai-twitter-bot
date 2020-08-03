@@ -71,7 +71,7 @@ class default_1 {
             }
             try {
                 this.bot.axios.defaults.timeout = timeout === -1 ? 0 : timeout;
-                logger.info(`uploading ${img.path}...`);
+                logger.info(`uploading ${JSON.stringify(exports.Message.Image(img.imageId, `${img.url.split(',')[0]},[...]`, img.path))}...`);
                 return this.bot.api.uploadImage('group', imgFile || img.path)
                     .then(response => {
                     logger.info(`uploading ${img.path} as group image was successful, response:`);
@@ -96,6 +96,7 @@ class default_1 {
                 host: this.botInfo.host,
                 port: this.botInfo.port,
             });
+            this.bot.axios.defaults.maxContentLength = Infinity;
             this.bot.on('message', (msg) => {
                 const chat = {
                     chatType: ChatTypeMap[msg.type],

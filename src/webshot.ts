@@ -7,16 +7,22 @@ import { Browser } from 'puppeteer';
 import * as sharp from 'sharp';
 import { Readable } from 'stream';
 
+import gifski from './gifski';
 import { getLogger } from './loggers';
 import { Message, MessageChain } from './mirai';
 import { Tweets } from './twitter';
 
 const xmlEntities = new XmlEntities();
 
+const ZHType = (type: string) => new class extends String {
+  public type = super.toString();
+  public toString = () => `[${super.toString()}]`;
+}(type);
+
 const typeInZH = {
-  photo: '[图片]',
-  video: '[视频]',
-  animated_gif: '[GIF]',
+  photo: ZHType('图片'),
+  video: ZHType('视频'),
+  animated_gif: ZHType('GIF'),
 };
 
 const logger = getLogger('webshot');
@@ -177,7 +183,7 @@ extends CallableInstance<
     );
   }
 
-  private fetchImage = (url: string): Promise<string> =>
+  private fetchMedia = (url: string): Promise<string> =>
     new Promise<ArrayBuffer>(resolve => {
       logger.info(`fetching ${url}`);
       axios({
@@ -203,10 +209,11 @@ extends CallableInstance<
             return 'image/jpeg';
           case 'png':
             return 'image/png';
-          case 'gif':
+          case 'mp4':
+            data = gifski(data);
             return 'image/gif';
         }
-      })(url.match(/(\.[a-z]+):(.*)/)[1]);
+      })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
       return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
     })
 
@@ -261,15 +268,28 @@ extends CallableInstance<
             if (msg) messageChain.push(msg);
           });
       }
-      // fetch extra images
+      // fetch extra entities
       if (1 - this.mode % 2) {
         if (originTwi.extended_entities) {
           originTwi.extended_entities.media.forEach(media => {
-            const url = media.media_url_https + ':orig';
-            promise = promise.then(() => this.fetchImage(url))
+            let url: string;
+            if (media.type === 'photo') {
+              url = media.media_url_https + ':orig';
+            } else {
+              url = media.video_info.variants
+                .filter(variant => variant.bitrate)
+                .sort((var1, var2) => var1.bitrate - var2.bitrate)
+                .map(variant => variant.url)[0]; // smallest video
+            }
+            const altMessage = Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
+            promise = promise.then(() => this.fetchMedia(url))
               .then(base64url =>
-                uploader(Message.Image('', base64url, url), () => Message.Plain(`[失败的图片：${url}]`))
+                uploader(Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
               )
+              .catch(error => {
+                logger.warn('unable to fetch media, sending plain text instead...');
+                return altMessage;
+              })
               .then(msg => {
                 messageChain.push(msg);
               });
@@ -291,12 +311,7 @@ extends CallableInstance<
       }
       promise.then(() => {
         logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
-        logger.info(JSON.stringify(messageChain.map(message => {
-          if (message.type === 'Image' && message.url.startsWith('data:')) {
-            return Message.Image(message.imageId, 'data:[...]', message.path);
-          }
-          return message;
-        })));
+        logger.info(JSON.stringify(messageChain));
         callback(messageChain, xmlEntities.decode(text), author);
       });
     });

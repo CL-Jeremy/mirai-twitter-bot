@@ -6,13 +6,21 @@ const html_entities_1 = require("html-entities");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
 const sharp = require("sharp");
+const gifski_1 = require("./gifski");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
 const xmlEntities = new html_entities_1.XmlEntities();
+const ZHType = (type) => new class extends String {
+    constructor() {
+        super(...arguments);
+        this.type = super.toString();
+        this.toString = () => `[${super.toString()}]`;
+    }
+}(type);
 const typeInZH = {
-    photo: '[图片]',
-    video: '[视频]',
-    animated_gif: '[GIF]',
+    photo: ZHType('图片'),
+    video: ZHType('视频'),
+    animated_gif: ZHType('GIF'),
 };
 const logger = loggers_1.getLogger('webshot');
 class Webshot extends CallableInstance {
@@ -153,7 +161,7 @@ class Webshot extends CallableInstance {
             }).catch(error => new Promise(resolve => this.reconnect(error, resolve))
                 .then(() => this.renderWebshot(url, height, webshotDelay)));
         };
-        this.fetchImage = (url) => new Promise(resolve => {
+        this.fetchMedia = (url) => new Promise(resolve => {
             logger.info(`fetching ${url}`);
             axios_1.default({
                 method: 'get',
@@ -179,10 +187,11 @@ class Webshot extends CallableInstance {
                         return 'image/jpeg';
                     case 'png':
                         return 'image/png';
-                    case 'gif':
+                    case 'mp4':
+                        data = gifski_1.default(data);
                         return 'image/gif';
                 }
-            })(url.match(/(\.[a-z]+):(.*)/)[1]);
+            })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
             return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
         });
         // tslint:disable-next-line: no-conditional-assignment
@@ -234,13 +243,27 @@ class Webshot extends CallableInstance {
                         messageChain.push(msg);
                 });
             }
-            // fetch extra images
+            // fetch extra entities
             if (1 - this.mode % 2) {
                 if (originTwi.extended_entities) {
                     originTwi.extended_entities.media.forEach(media => {
-                        const url = media.media_url_https + ':orig';
-                        promise = promise.then(() => this.fetchImage(url))
-                            .then(base64url => uploader(mirai_1.Message.Image('', base64url, url), () => mirai_1.Message.Plain(`[失败的图片：${url}]`)))
+                        let url;
+                        if (media.type === 'photo') {
+                            url = media.media_url_https + ':orig';
+                        }
+                        else {
+                            url = media.video_info.variants
+                                .filter(variant => variant.bitrate)
+                                .sort((var1, var2) => var1.bitrate - var2.bitrate)
+                                .map(variant => variant.url)[0]; // smallest video
+                        }
+                        const altMessage = mirai_1.Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
+                        promise = promise.then(() => this.fetchMedia(url))
+                            .then(base64url => uploader(mirai_1.Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage))
+                            .catch(error => {
+                            logger.warn('unable to fetch media, sending plain text instead...');
+                            return altMessage;
+                        })
                             .then(msg => {
                             messageChain.push(msg);
                         });
@@ -262,12 +285,7 @@ class Webshot extends CallableInstance {
             }
             promise.then(() => {
                 logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
-                logger.info(JSON.stringify(messageChain.map(message => {
-                    if (message.type === 'Image' && message.url.startsWith('data:')) {
-                        return mirai_1.Message.Image(message.imageId, 'data:[...]', message.path);
-                    }
-                    return message;
-                })));
+                logger.info(JSON.stringify(messageChain));
                 callback(messageChain, xmlEntities.decode(text), author);
             });
         });
