@@ -1,4 +1,13 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
 const CallableInstance = require("callable-instance");
@@ -161,7 +170,7 @@ class Webshot extends CallableInstance {
             }).catch(error => new Promise(resolve => this.reconnect(error, resolve))
                 .then(() => this.renderWebshot(url, height, webshotDelay)));
         };
-        this.fetchMedia = (url) => new Promise(resolve => {
+        this.fetchMedia = (url) => new Promise((resolve, reject) => {
             logger.info(`fetching ${url}`);
             axios_1.default({
                 method: 'get',
@@ -174,28 +183,29 @@ class Webshot extends CallableInstance {
                 }
                 else {
                     logger.error(`failed to fetch ${url}: ${res.status}`);
-                    resolve();
+                    reject();
                 }
             }).catch(err => {
                 logger.error(`failed to fetch ${url}: ${err.message}`);
-                resolve();
+                reject();
             });
-        }).then(data => {
-            const mimetype = (ext => {
-                switch (ext) {
-                    case 'jpg':
-                        return 'image/jpeg';
-                    case 'png':
-                        return 'image/png';
-                    case 'mp4':
-                        const dims = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
-                        const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
-                        data = gifski_1.default(data, dims[0] * factor);
-                        return 'image/gif';
-                }
-            })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
-            return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
-        });
+        }).then(data => ((ext) => __awaiter(this, void 0, void 0, function* () {
+            switch (ext) {
+                case 'jpg':
+                    return { mimetype: 'image/jpeg', data };
+                case 'png':
+                    return { mimetype: 'image/png', data };
+                case 'mp4':
+                    const dims = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
+                    const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
+                    try {
+                        return { mimetype: 'image/gif', data: yield gifski_1.default(data, dims[0] * factor) };
+                    }
+                    catch (err) {
+                        throw Error(err);
+                    }
+            }
+        }))(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
             onready();

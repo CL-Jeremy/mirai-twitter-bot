@@ -184,7 +184,7 @@ extends CallableInstance<
   }
 
   private fetchMedia = (url: string): Promise<string> =>
-    new Promise<ArrayBuffer>(resolve => {
+    new Promise<ArrayBuffer>((resolve, reject) => {
       logger.info(`fetching ${url}`);
       axios({
         method: 'get',
@@ -196,28 +196,32 @@ extends CallableInstance<
             resolve(res.data);
         } else {
           logger.error(`failed to fetch ${url}: ${res.status}`);
-          resolve();
+          reject();
         }
       }).catch (err => {
         logger.error(`failed to fetch ${url}: ${err.message}`);
-        resolve();
+        reject();
       });
-    }).then(data => {
-      const mimetype = (ext => {
+    }).then(data =>
+      (async ext => {
         switch (ext) {
           case 'jpg':
-            return 'image/jpeg';
+            return {mimetype: 'image/jpeg', data};
           case 'png':
-            return 'image/png';
+            return {mimetype: 'image/png', data};
           case 'mp4':
             const dims: number[] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
             const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
-            data = gifski(data, dims[0] * factor);
-            return 'image/gif';
+            try {
+              return {mimetype: 'image/gif', data: await gifski(data, dims[0] * factor)};
+            } catch (err) {
+              throw Error(err);
+            }
         }
-      })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
-      return `data:${mimetype};base64,${Buffer.from(data).toString('base64')}`;
-    })
+      })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])
+    ).then(typedData => 
+      `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`
+    )
 
   public webshot(
     tweets: Tweets,
