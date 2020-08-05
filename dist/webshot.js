@@ -188,7 +188,9 @@ class Webshot extends CallableInstance {
                     case 'png':
                         return 'image/png';
                     case 'mp4':
-                        data = gifski_1.default(data);
+                        const dims = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
+                        const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
+                        data = gifski_1.default(data, dims[0] * factor);
                         return 'image/gif';
                 }
             })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
@@ -254,8 +256,8 @@ class Webshot extends CallableInstance {
                         else {
                             url = media.video_info.variants
                                 .filter(variant => variant.bitrate)
-                                .sort((var1, var2) => var1.bitrate - var2.bitrate)
-                                .map(variant => variant.url)[0]; // smallest video
+                                .sort((var1, var2) => var2.bitrate - var1.bitrate)
+                                .map(variant => variant.url)[0]; // largest video
                         }
                         const altMessage = mirai_1.Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
                         promise = promise.then(() => this.fetchMedia(url))
