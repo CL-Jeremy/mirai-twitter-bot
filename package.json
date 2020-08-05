@@ -1,6 +1,6 @@
 {
   "name": "mirai-twitter-bot",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Mirai Twitter Bot",
   "main": "./dist/main.js",
   "bin": {
