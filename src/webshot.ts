@@ -210,7 +210,9 @@ extends CallableInstance<
           case 'png':
             return 'image/png';
           case 'mp4':
-            data = gifski(data);
+            const dims: number[] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
+            const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
+            data = gifski(data, dims[0] * factor);
             return 'image/gif';
         }
       })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1]);
@@ -279,8 +281,8 @@ extends CallableInstance<
             } else {
               url = media.video_info.variants
                 .filter(variant => variant.bitrate)
-                .sort((var1, var2) => var1.bitrate - var2.bitrate)
-                .map(variant => variant.url)[0]; // smallest video
+                .sort((var1, var2) => var2.bitrate - var1.bitrate)
+                .map(variant => variant.url)[0]; // largest video
             }
             const altMessage = Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
             promise = promise.then(() => this.fetchMedia(url))

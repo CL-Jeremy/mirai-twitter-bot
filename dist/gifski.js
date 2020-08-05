@@ -5,7 +5,7 @@ const fs_1 = require("fs");
 const temp = require("temp");
 const loggers_1 = require("./loggers");
 const logger = loggers_1.getLogger('gifski');
-function default_1(data) {
+function default_1(data, targetWidth) {
     const outputFilePath = temp.path({ suffix: '.gif' });
     // temp.track();
     try {
@@ -14,15 +14,18 @@ function default_1(data) {
         fs_1.closeSync(inputFile.fd);
         logger.info(`saved video file to ${inputFile.path}, starting gif conversion...`);
         const args = [
+            inputFile.path,
+            '-o',
+            outputFilePath,
             '--fps',
             '12.5',
             '--quiet',
             '--quality',
-            '80',
-            '-o',
-            outputFilePath,
-            inputFile.path,
+            '90',
         ];
+        if (typeof (targetWidth) === 'number') {
+            args.push('--width', (Math.ceil(targetWidth / 2) * 2).toString());
+        }
         logger.info(` gifski ${args.join(' ')}`);
         const gifskiInvocation = child_process_1.spawnSync('gifski', args, { encoding: 'utf8', timeout: 90000 });
         if (gifskiInvocation.stderr)
