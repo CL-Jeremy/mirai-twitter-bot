@@ -44,7 +44,7 @@ class Webshot extends CallableInstance {
         this.renderWebshot = (url, height, webshotDelay) => {
             const jpeg = (data) => data.pipe(sharp()).jpeg({ quality: 90, trellisQuantisation: true });
             const sharpToBase64 = (pic) => new Promise(resolve => {
-                pic.toBuffer().then(buffer => resolve(`data:image/jpg;base64,${buffer.toString('base64')}`));
+                pic.toBuffer().then(buffer => resolve(`data:image/jpeg;base64,${buffer.toString('base64')}`));
             });
             const promise = new Promise((resolve, reject) => {
                 const width = 720;
