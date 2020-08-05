@@ -23,8 +23,8 @@
   },
   "homepage": "https://github.com/CL-Jeremy/mirai-twitter-bot",
   "scripts": {
-    "build": "rm -rf dist && tsc --outDir dist",
-    "lint": "tslint --fix -c tslint.json --project ./"
+    "build": "rm -rf dist && npx tsc --outDir dist",
+    "lint": "npx tslint --fix -c tslint.json --project ./"
   },
   "dependencies": {
     "callable-instance": "^2.0.0",

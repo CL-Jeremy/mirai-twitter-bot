@@ -65,7 +65,7 @@ extends CallableInstance<
   private renderWebshot = (url: string, height: number, webshotDelay: number): Promise<string> => {
     const jpeg = (data: Readable) => data.pipe(sharp()).jpeg({quality: 90, trellisQuantisation: true});
     const sharpToBase64 = (pic: sharp.Sharp) => new Promise<string>(resolve => {
-      pic.toBuffer().then(buffer => resolve(`data:image/jpg;base64,${buffer.toString('base64')}`));
+      pic.toBuffer().then(buffer => resolve(`data:image/jpeg;base64,${buffer.toString('base64')}`));
     });
     const promise = new Promise<{ base64: string, boundary: null | number }>((resolve, reject) => {
       const width = 720;
