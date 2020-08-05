@@ -1,9 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const child_process_1 = require("child_process");
+const fs_1 = require("fs");
 const temp = require("temp");
 const loggers_1 = require("./loggers");
-const fs_1 = require("fs");
 const logger = loggers_1.getLogger('gifski');
 function default_1(data) {
     const outputFilePath = temp.path({ suffix: '.gif' });
@@ -21,7 +21,7 @@ function default_1(data) {
             '80',
             '-o',
             outputFilePath,
-            inputFile.path
+            inputFile.path,
         ];
         logger.info(` gifski ${args.join(' ')}`);
         const gifskiInvocation = child_process_1.spawnSync('gifski', args, { encoding: 'utf8', timeout: 90000 });
