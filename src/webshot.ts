@@ -210,10 +210,10 @@ extends CallableInstance<
           case 'png':
             return {mimetype: 'image/png', data};
           case 'mp4':
-            const dims: number[] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
-            const factor = dims.some(x => x >= 960) ? 0.375 : 0.5;
+            const [ width, height ] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
+            const factor = width + height > 1600 ? 0.375 : 0.5;
             try {
-              return {mimetype: 'image/gif', data: await gifski(data, dims[0] * factor)};
+              return {mimetype: 'image/gif', data: await gifski(data, width * factor)};
             } catch (err) {
               throw Error(err);
             }
