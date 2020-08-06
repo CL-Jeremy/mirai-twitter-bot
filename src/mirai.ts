@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { closeSync, writeSync } from 'fs';
 import Mirai, { MessageType } from 'mirai-ts';
 import MiraiMessage from 'mirai-ts/dist/message';
 import * as temp from 'temp';
@@ -66,10 +67,10 @@ export default class {
       }
       temp.track();
       try {
-        const tempFileStream = temp.createWriteStream();
-        tempFileStream.write(img.url.split(',')[1], 'base64');
-        tempFileStream.end();
-        if (typeof(tempFileStream.path) === 'string') imgFile = tempFileStream.path;
+        const tempFile = temp.openSync();
+        writeSync(tempFile.fd, Buffer.from(img.url.split(',')[1], 'base64'));
+        closeSync(tempFile.fd);
+        imgFile = tempFile.path;
       } catch (error) {
         logger.error(error);
       }
