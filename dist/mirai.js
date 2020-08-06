@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Message = void 0;
 const axios_1 = require("axios");
+const fs_1 = require("fs");
 const mirai_ts_1 = require("mirai-ts");
 const message_1 = require("mirai-ts/dist/message");
 const temp = require("temp");
@@ -59,11 +60,10 @@ class default_1 {
                 }
                 temp.track();
                 try {
-                    const tempFileStream = temp.createWriteStream();
-                    tempFileStream.write(img.url.split(',')[1], 'base64');
-                    tempFileStream.end();
-                    if (typeof (tempFileStream.path) === 'string')
-                        imgFile = tempFileStream.path;
+                    const tempFile = temp.openSync();
+                    fs_1.writeSync(tempFile.fd, Buffer.from(img.url.split(',')[1], 'base64'));
+                    fs_1.closeSync(tempFile.fd);
+                    imgFile = tempFile.path;
                 }
                 catch (error) {
                     logger.error(error);
