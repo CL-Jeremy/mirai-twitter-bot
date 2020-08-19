@@ -28,7 +28,7 @@
 | mode | 工作模式，0 为图文模式，1 为纯文本模式，2 为文<br />本附图模式 | 0 |
 | resume_on_start | 是否在启动时从退出时的进度继续（拉取本应用非活<br />动时期错过的推文） | false |
 | work_interval | 对单个订阅两次拉取更新的最少间隔时间（秒） | 60 |
-| webshot_delay | 抓取网页截图时等待网页加载的延迟时长（毫秒） | 5000 |
+| webshot_delay | 抓取网页截图时等待网页加载的延迟时长（毫秒） | 10000 |
 | lockfile | 本地保存订阅信息以便下次启动时恢复 | subscriber.lock |
 | loglevel | 日志调试等级 | info |
 

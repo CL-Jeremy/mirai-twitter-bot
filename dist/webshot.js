@@ -61,7 +61,7 @@ class Webshot extends CallableInstance {
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
                 this.browser.newPage()
                     .then(page => {
-                    page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
+                    const article = page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
                         .then(() => page.setViewport({
                         width: width / zoomFactor,
                         height: height / zoomFactor,
@@ -69,15 +69,18 @@ class Webshot extends CallableInstance {
                         deviceScaleFactor: zoomFactor,
                     }))
                         .then(() => page.setBypassCSP(true))
-                        .then(() => page.goto(url, { waitUntil: 'load', timeout: 150000 }))
+                        .then(() => page.goto(url, { waitUntil: 'networkidle0', timeout: webshotDelay }))
+                        .catch(() => {
+                        logger.warn(`navigation timed out at ${webshotDelay} seconds`);
+                    })
                         // hide header, "more options" button, like and retweet count
                         .then(() => page.addStyleTag({
                         content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
                     }))
-                        .then(() => page.waitFor(webshotDelay))
-                        .then(() => page.addScriptTag({
+                        .then(() => page.$('article'));
+                    const captureLoadedPage = () => page.addScriptTag({
                         content: 'document.documentElement.scrollTop=0;',
-                    }))
+                    })
                         .then(() => page.screenshot())
                         .then(screenshot => {
                         new pngjs_1.PNG({
@@ -159,6 +162,15 @@ class Webshot extends CallableInstance {
                         }).parse(screenshot);
                     })
                         .then(() => page.close());
+                    article.then(elementHandle => {
+                        if (elementHandle === null) {
+                            logger.error(`error shooting webshot for ${url}, could not load web page of tweet`);
+                            resolve({ base64: '', boundary: 0 });
+                        }
+                        else {
+                            captureLoadedPage();
+                        }
+                    });
                 })
                     .catch(reject);
             });
@@ -246,9 +258,9 @@ class Webshot extends CallableInstance {
                 const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
                     .then(base64url => {
-                    if (base64url) {
+                    if (base64url)
                         return uploader(mirai_1.Message.Image('', base64url, url), () => mirai_1.Message.Plain(author + text));
-                    }
+                    return mirai_1.Message.Plain(author + text);
                 })
                     .then(msg => {
                     if (msg)
@@ -265,7 +277,7 @@ class Webshot extends CallableInstance {
                         }
                         else {
                             url = media.video_info.variants
-                                .filter(variant => variant.bitrate)
+                                .filter(variant => variant.bitrate !== undefined)
                                 .sort((var1, var2) => var2.bitrate - var1.bitrate)
                                 .map(variant => variant.url)[0]; // largest video
                         }
