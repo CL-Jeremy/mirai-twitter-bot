@@ -78,7 +78,7 @@ if (config.work_interval === undefined) {
   config.work_interval = 60;
 }
 if (config.webshot_delay === undefined) {
-  config.webshot_delay = 5000;
+  config.webshot_delay = 10000;
 }
 if (config.loglevel === undefined) {
   config.loglevel = 'info';
