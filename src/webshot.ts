@@ -6,6 +6,7 @@ import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import * as sharp from 'sharp';
 import { Readable } from 'stream';
+import { promisify } from 'util';
 
 import gifski from './gifski';
 import { getLogger } from './loggers';
@@ -58,7 +59,7 @@ extends CallableInstance<
   private reconnect = (error, onready?) => {
     logger.error(`connection error, reason: ${error}`);
     logger.warn('trying to reconnect in 2.5s...');
-    return new Promise(resolve => setTimeout(resolve, 2500))
+    return promisify(setTimeout)(2500)
     .then(() => this.connect(onready));
   }
 
@@ -73,6 +74,19 @@ extends CallableInstance<
       logger.info(`shooting ${width}*${height} webshot for ${url}`);
       this.browser.newPage()
         .then(page => {
+          let idle = false;
+          const startTime = new Date().getTime();
+          const getTimerTime = () => new Date().getTime() - startTime;
+          const getTimeout = () => idle ? 0 : Math.max(500, webshotDelay - getTimerTime());
+          const awaitIdle = page.waitForNavigation({ waitUntil: 'networkidle0', timeout: getTimeout() });
+          const waitUntilIdle = () => {
+            if (idle) return Promise.resolve();
+            return awaitIdle.then(() => { logger.info('page loaded successfully'); idle = true; });
+          };
+          const waitForSelectorUntilIdle = (selector: string) => Promise.race([
+            waitUntilIdle().then(() => Promise.reject(new puppeteer.errors.TimeoutError())),
+            page.waitForSelector(selector, {timeout: getTimeout()}),
+          ]);
           const article = page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
             .then(() => page.setViewport({
               width: width / zoomFactor,
@@ -81,20 +95,23 @@ extends CallableInstance<
               deviceScaleFactor: zoomFactor,
             }))
             .then(() => page.setBypassCSP(true))
-            .then(() => page.goto(url, {waitUntil: 'networkidle0', timeout: webshotDelay}))
-            .catch(() => {
-              logger.warn(`navigation timed out at ${webshotDelay} seconds`);
-            })
+            .then(() => page.goto(url, {waitUntil: 'load', timeout: getTimeout()}))
             // hide header, "more options" button, like and retweet count
             .then(() => page.addStyleTag({
               content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
             }))
-            .then(() => page.$('article'));
+            .then(() => page.waitForSelector('article', {timeout: getTimeout()}))
+            .catch((err: Error): Promise<puppeteer.ElementHandle<Element> | null> => {
+              if (err.name !== 'TimeoutError') throw err;
+              logger.warn(`navigation timed out at ${getTimerTime()} seconds`);
+              return Promise.resolve(null);
+            });
 
           const captureLoadedPage = () =>
             page.addScriptTag({
               content: 'document.documentElement.scrollTop=0;',
             })
+            .then(() => promisify(setTimeout)(getTimeout()))
             .then(() => page.screenshot())
             .then(screenshot => {
               new PNG({
@@ -180,9 +197,21 @@ extends CallableInstance<
           article.then(elementHandle => {
             if (elementHandle === null) {
               logger.error(`error shooting webshot for ${url}, could not load web page of tweet`);
+              page.close();
               resolve({base64: '', boundary: 0});
             } else {
-              captureLoadedPage();
+              waitForSelectorUntilIdle('video').then(() => {
+                logger.info('found video, freezing it...');
+                return page.$x('//article//div[@data-testid="placementTracking"]')
+                .then(candidateHandles => {
+                  if (candidateHandles.length) return candidateHandles[0];
+                });
+              })
+              .then(handle => page.evaluate((el: Element) => el.innerHTML = el.innerHTML, handle))
+              .catch((err: Error) => {
+                if (err.name !== 'TimeoutError') throw err;
+              })
+              .then(captureLoadedPage);
             }
           });
         })
@@ -197,8 +226,18 @@ extends CallableInstance<
     );
   }
 
-  private fetchMedia = (url: string): Promise<string> =>
-    new Promise<ArrayBuffer>((resolve, reject) => {
+  private fetchMedia = (url: string): Promise<string> => {
+    const gif = (data: ArrayBuffer) => {
+      const matchDims = url.match(/\/(\d+)x(\d+)\//);
+      if (matchDims) {
+        const [ width, height ] = matchDims.slice(1).map(Number);
+        const factor = width + height > 1600 ? 0.375 : 0.5;
+        return gifski(data, width * factor);
+      }
+      return gifski(data);
+    };
+
+    return new Promise<ArrayBuffer>((resolve, reject) => {
       logger.info(`fetching ${url}`);
       axios({
         method: 'get',
@@ -224,18 +263,18 @@ extends CallableInstance<
           case 'png':
             return {mimetype: 'image/png', data};
           case 'mp4':
-            const [ width, height ] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
-            const factor = width + height > 1600 ? 0.375 : 0.5;
             try {
-              return {mimetype: 'image/gif', data: await gifski(data, width * factor)};
+              return {mimetype: 'image/gif', data: await gif(data)};
             } catch (err) {
+              logger.error(err);
               throw Error(err);
             }
         }
       })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])
     ).then(typedData => 
       `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`
-    )
+    );
+  }
 
   public webshot(
     tweets: Tweets,
