@@ -61,6 +61,20 @@ class Webshot extends CallableInstance {
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
                 this.browser.newPage()
                     .then(page => {
+                    const startTime = new Date().getTime();
+                    const getTimerTime = () => new Date().getTime() - startTime;
+                    const getTimeout = () => Math.max(1000, webshotDelay - getTimerTime());
+                    let idle = false;
+                    const awaitIdle = page.waitForNavigation({ waitUntil: 'networkidle0', timeout: getTimeout() });
+                    const waitUntilIdle = () => {
+                        if (idle)
+                            return Promise.resolve();
+                        return awaitIdle.then(() => { idle = true; });
+                    };
+                    const waitForSelectorUntilIdle = (selector) => Promise.race([
+                        waitUntilIdle().then(() => Promise.reject(new puppeteer.errors.TimeoutError())),
+                        page.waitForSelector(selector, { timeout: getTimeout() }),
+                    ]);
                     const article = page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
                         .then(() => page.setViewport({
                         width: width / zoomFactor,
@@ -69,15 +83,18 @@ class Webshot extends CallableInstance {
                         deviceScaleFactor: zoomFactor,
                     }))
                         .then(() => page.setBypassCSP(true))
-                        .then(() => page.goto(url, { waitUntil: 'networkidle0', timeout: webshotDelay }))
-                        .catch(() => {
-                        logger.warn(`navigation timed out at ${webshotDelay} seconds`);
-                    })
+                        .then(() => page.goto(url, { waitUntil: 'load', timeout: getTimeout() }))
                         // hide header, "more options" button, like and retweet count
                         .then(() => page.addStyleTag({
                         content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
                     }))
-                        .then(() => page.$('article'));
+                        .then(() => waitForSelectorUntilIdle('article'))
+                        .catch((err) => {
+                        if (err.name !== 'TimeoutError')
+                            throw err;
+                        logger.warn(`navigation timed out at ${getTimerTime()} seconds`);
+                        return Promise.resolve(null);
+                    });
                     const captureLoadedPage = () => page.addScriptTag({
                         content: 'document.documentElement.scrollTop=0;',
                     })
@@ -165,10 +182,30 @@ class Webshot extends CallableInstance {
                     article.then(elementHandle => {
                         if (elementHandle === null) {
                             logger.error(`error shooting webshot for ${url}, could not load web page of tweet`);
+                            page.close();
                             resolve({ base64: '', boundary: 0 });
                         }
                         else {
-                            captureLoadedPage();
+                            const coverSelector = page.$x('//article//div[@role="button"]/div/img/..');
+                            const badgeSelector = page.$x('//article//div[@role="button"]/div/img/../../..//span/..');
+                            const getFirst = (arraySelector) => arraySelector.then(candidatesHandle => {
+                                if (candidatesHandle.length) {
+                                    return candidatesHandle[0];
+                                }
+                            });
+                            const prepend = (e1, e2) => e1.parentElement.prepend(e2);
+                            waitForSelectorUntilIdle('video')
+                                .then(videoHandle => {
+                                logger.info('found video, replacing it with cover...');
+                                return getFirst(badgeSelector).then(badgeHandle => page.evaluate(prepend, videoHandle, badgeHandle))
+                                    .then(() => getFirst(coverSelector).then(coverHandle => page.evaluate(prepend, videoHandle, coverHandle)))
+                                    .then(() => page.evaluate((e) => e.remove(), videoHandle));
+                            })
+                                .catch((err) => {
+                                if (err.name !== 'TimeoutError')
+                                    throw err;
+                            })
+                                .then(captureLoadedPage);
                         }
                     });
                 })
@@ -182,42 +219,52 @@ class Webshot extends CallableInstance {
             }).catch(error => new Promise(resolve => this.reconnect(error, resolve))
                 .then(() => this.renderWebshot(url, height, webshotDelay)));
         };
-        this.fetchMedia = (url) => new Promise((resolve, reject) => {
-            logger.info(`fetching ${url}`);
-            axios_1.default({
-                method: 'get',
-                url,
-                responseType: 'arraybuffer',
-            }).then(res => {
-                if (res.status === 200) {
-                    logger.info(`successfully fetched ${url}`);
-                    resolve(res.data);
-                }
-                else {
-                    logger.error(`failed to fetch ${url}: ${res.status}`);
-                    reject();
-                }
-            }).catch(err => {
-                logger.error(`failed to fetch ${url}: ${err.message}`);
-                reject();
-            });
-        }).then(data => ((ext) => __awaiter(this, void 0, void 0, function* () {
-            switch (ext) {
-                case 'jpg':
-                    return { mimetype: 'image/jpeg', data };
-                case 'png':
-                    return { mimetype: 'image/png', data };
-                case 'mp4':
-                    const [width, height] = url.match(/\/(\d+)x(\d+)\//).slice(1).map(Number);
+        this.fetchMedia = (url) => {
+            const gif = (data) => {
+                const matchDims = url.match(/\/(\d+)x(\d+)\//);
+                if (matchDims) {
+                    const [width, height] = matchDims.slice(1).map(Number);
                     const factor = width + height > 1600 ? 0.375 : 0.5;
-                    try {
-                        return { mimetype: 'image/gif', data: yield gifski_1.default(data, width * factor) };
+                    return gifski_1.default(data, width * factor);
+                }
+                return gifski_1.default(data);
+            };
+            return new Promise((resolve, reject) => {
+                logger.info(`fetching ${url}`);
+                axios_1.default({
+                    method: 'get',
+                    url,
+                    responseType: 'arraybuffer',
+                }).then(res => {
+                    if (res.status === 200) {
+                        logger.info(`successfully fetched ${url}`);
+                        resolve(res.data);
                     }
-                    catch (err) {
-                        throw Error(err);
+                    else {
+                        logger.error(`failed to fetch ${url}: ${res.status}`);
+                        reject();
                     }
-            }
-        }))(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
+                }).catch(err => {
+                    logger.error(`failed to fetch ${url}: ${err.message}`);
+                    reject();
+                });
+            }).then(data => ((ext) => __awaiter(this, void 0, void 0, function* () {
+                switch (ext) {
+                    case 'jpg':
+                        return { mimetype: 'image/jpeg', data };
+                    case 'png':
+                        return { mimetype: 'image/png', data };
+                    case 'mp4':
+                        try {
+                            return { mimetype: 'image/gif', data: yield gif(data) };
+                        }
+                        catch (err) {
+                            logger.error(err);
+                            throw Error(err);
+                        }
+                }
+            }))(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
+        };
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
             onready();
