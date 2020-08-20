@@ -6,6 +6,7 @@ import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import * as sharp from 'sharp';
 import { Readable } from 'stream';
+import { promisify } from 'util';
 
 import gifski from './gifski';
 import { getLogger } from './loggers';
@@ -58,7 +59,7 @@ extends CallableInstance<
   private reconnect = (error, onready?) => {
     logger.error(`connection error, reason: ${error}`);
     logger.warn('trying to reconnect in 2.5s...');
-    return new Promise(resolve => setTimeout(resolve, 2500))
+    return promisify(setTimeout)(2500)
     .then(() => this.connect(onready));
   }
 
@@ -73,14 +74,14 @@ extends CallableInstance<
       logger.info(`shooting ${width}*${height} webshot for ${url}`);
       this.browser.newPage()
         .then(page => {
+          let idle = false;
           const startTime = new Date().getTime();
           const getTimerTime = () => new Date().getTime() - startTime;
-          const getTimeout = () => Math.max(1000, webshotDelay - getTimerTime());
-          let idle = false;
+          const getTimeout = () => idle ? 0 : Math.max(500, webshotDelay - getTimerTime());
           const awaitIdle = page.waitForNavigation({ waitUntil: 'networkidle0', timeout: getTimeout() });
           const waitUntilIdle = () => {
             if (idle) return Promise.resolve();
-            return awaitIdle.then(() => { idle = true; });
+            return awaitIdle.then(() => { logger.info('page loaded successfully'); idle = true; });
           };
           const waitForSelectorUntilIdle = (selector: string) => Promise.race([
             waitUntilIdle().then(() => Promise.reject(new puppeteer.errors.TimeoutError())),
@@ -99,7 +100,7 @@ extends CallableInstance<
             .then(() => page.addStyleTag({
               content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
             }))
-            .then(() => waitForSelectorUntilIdle('article'))
+            .then(() => page.waitForSelector('article', {timeout: getTimeout()}))
             .catch((err: Error): Promise<puppeteer.ElementHandle<Element> | null> => {
               if (err.name !== 'TimeoutError') throw err;
               logger.warn(`navigation timed out at ${getTimerTime()} seconds`);
@@ -110,6 +111,7 @@ extends CallableInstance<
             page.addScriptTag({
               content: 'document.documentElement.scrollTop=0;',
             })
+            .then(() => promisify(setTimeout)(getTimeout()))
             .then(() => page.screenshot())
             .then(screenshot => {
               new PNG({
@@ -198,28 +200,14 @@ extends CallableInstance<
               page.close();
               resolve({base64: '', boundary: 0});
             } else {
-              const coverSelector = page.$x('//article//div[@role="button"]/div/img/..');
-              const badgeSelector = page.$x('//article//div[@role="button"]/div/img/../../..//span/..');
-              const getFirst = (arraySelector: Promise<puppeteer.ElementHandle<Element>[]>) =>
-                arraySelector.then(candidatesHandle => {
-                  if (candidatesHandle.length) {
-                    return candidatesHandle[0];
-                  }
+              waitForSelectorUntilIdle('video').then(() => {
+                logger.info('found video, freezing it...');
+                return page.$x('//article//div[@data-testid="placementTracking"]')
+                .then(candidateHandles => {
+                  if (candidateHandles.length) return candidateHandles[0];
                 });
-              const prepend = (e1: Element, e2: Element) => e1.parentElement.prepend(e2);
-              
-              waitForSelectorUntilIdle('video')
-              .then(videoHandle => {
-                logger.info('found video, replacing it with cover...');
-                return getFirst(badgeSelector).then(badgeHandle =>
-                  page.evaluate(prepend, videoHandle, badgeHandle))
-                .then(() => getFirst(coverSelector).then(coverHandle =>
-                  page.evaluate(prepend, videoHandle, coverHandle))
-                )
-                .then(() =>
-                  page.evaluate((e: Element) => e.remove(), videoHandle)
-                );
               })
+              .then(handle => page.evaluate((el: Element) => el.innerHTML = el.innerHTML, handle))
               .catch((err: Error) => {
                 if (err.name !== 'TimeoutError') throw err;
               })

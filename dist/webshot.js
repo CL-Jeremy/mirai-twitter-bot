@@ -15,6 +15,7 @@ const html_entities_1 = require("html-entities");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
 const sharp = require("sharp");
+const util_1 = require("util");
 const gifski_1 = require("./gifski");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
@@ -47,7 +48,7 @@ class Webshot extends CallableInstance {
         this.reconnect = (error, onready) => {
             logger.error(`connection error, reason: ${error}`);
             logger.warn('trying to reconnect in 2.5s...');
-            return new Promise(resolve => setTimeout(resolve, 2500))
+            return util_1.promisify(setTimeout)(2500)
                 .then(() => this.connect(onready));
         };
         this.renderWebshot = (url, height, webshotDelay) => {
@@ -61,15 +62,15 @@ class Webshot extends CallableInstance {
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
                 this.browser.newPage()
                     .then(page => {
+                    let idle = false;
                     const startTime = new Date().getTime();
                     const getTimerTime = () => new Date().getTime() - startTime;
-                    const getTimeout = () => Math.max(1000, webshotDelay - getTimerTime());
-                    let idle = false;
+                    const getTimeout = () => idle ? 0 : Math.max(500, webshotDelay - getTimerTime());
                     const awaitIdle = page.waitForNavigation({ waitUntil: 'networkidle0', timeout: getTimeout() });
                     const waitUntilIdle = () => {
                         if (idle)
                             return Promise.resolve();
-                        return awaitIdle.then(() => { idle = true; });
+                        return awaitIdle.then(() => { logger.info('page loaded successfully'); idle = true; });
                     };
                     const waitForSelectorUntilIdle = (selector) => Promise.race([
                         waitUntilIdle().then(() => Promise.reject(new puppeteer.errors.TimeoutError())),
@@ -88,7 +89,7 @@ class Webshot extends CallableInstance {
                         .then(() => page.addStyleTag({
                         content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
                     }))
-                        .then(() => waitForSelectorUntilIdle('article'))
+                        .then(() => page.waitForSelector('article', { timeout: getTimeout() }))
                         .catch((err) => {
                         if (err.name !== 'TimeoutError')
                             throw err;
@@ -98,6 +99,7 @@ class Webshot extends CallableInstance {
                     const captureLoadedPage = () => page.addScriptTag({
                         content: 'document.documentElement.scrollTop=0;',
                     })
+                        .then(() => util_1.promisify(setTimeout)(getTimeout()))
                         .then(() => page.screenshot())
                         .then(screenshot => {
                         new pngjs_1.PNG({
@@ -186,21 +188,15 @@ class Webshot extends CallableInstance {
                             resolve({ base64: '', boundary: 0 });
                         }
                         else {
-                            const coverSelector = page.$x('//article//div[@role="button"]/div/img/..');
-                            const badgeSelector = page.$x('//article//div[@role="button"]/div/img/../../..//span/..');
-                            const getFirst = (arraySelector) => arraySelector.then(candidatesHandle => {
-                                if (candidatesHandle.length) {
-                                    return candidatesHandle[0];
-                                }
-                            });
-                            const prepend = (e1, e2) => e1.parentElement.prepend(e2);
-                            waitForSelectorUntilIdle('video')
-                                .then(videoHandle => {
-                                logger.info('found video, replacing it with cover...');
-                                return getFirst(badgeSelector).then(badgeHandle => page.evaluate(prepend, videoHandle, badgeHandle))
-                                    .then(() => getFirst(coverSelector).then(coverHandle => page.evaluate(prepend, videoHandle, coverHandle)))
-                                    .then(() => page.evaluate((e) => e.remove(), videoHandle));
+                            waitForSelectorUntilIdle('video').then(() => {
+                                logger.info('found video, freezing it...');
+                                return page.$x('//article//div[@data-testid="placementTracking"]')
+                                    .then(candidateHandles => {
+                                    if (candidateHandles.length)
+                                        return candidateHandles[0];
+                                });
                             })
+                                .then(handle => page.evaluate((el) => el.innerHTML = el.innerHTML, handle))
                                 .catch((err) => {
                                 if (err.name !== 'TimeoutError')
                                     throw err;
