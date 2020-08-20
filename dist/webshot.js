@@ -62,21 +62,10 @@ class Webshot extends CallableInstance {
                 logger.info(`shooting ${width}*${height} webshot for ${url}`);
                 this.browser.newPage()
                     .then(page => {
-                    let idle = false;
                     const startTime = new Date().getTime();
                     const getTimerTime = () => new Date().getTime() - startTime;
-                    const getTimeout = () => idle ? 0 : Math.max(500, webshotDelay - getTimerTime());
-                    const awaitIdle = page.waitForNavigation({ waitUntil: 'networkidle0', timeout: getTimeout() });
-                    const waitUntilIdle = () => {
-                        if (idle)
-                            return Promise.resolve();
-                        return awaitIdle.then(() => { logger.info('page loaded successfully'); idle = true; });
-                    };
-                    const waitForSelectorUntilIdle = (selector) => Promise.race([
-                        waitUntilIdle().then(() => Promise.reject(new puppeteer.errors.TimeoutError())),
-                        page.waitForSelector(selector, { timeout: getTimeout() }),
-                    ]);
-                    const article = page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
+                    const getTimeout = () => Math.max(500, webshotDelay - getTimerTime());
+                    page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36')
                         .then(() => page.setViewport({
                         width: width / zoomFactor,
                         height: height / zoomFactor,
@@ -89,16 +78,31 @@ class Webshot extends CallableInstance {
                         .then(() => page.addStyleTag({
                         content: 'header{display:none!important}path[d=\'M20.207 7.043a1 1 0 0 0-1.414 0L12 13.836 5.207 7.043a1 1 0 0 0-1.414 1.414l7.5 7.5a.996.996 0 0 0 1.414 0l7.5-7.5a1 1 0 0 0 0-1.414z\'],div[role=\'button\']{display: none;}',
                     }))
+                        // remove listeners
+                        .then(() => page.evaluate(() => {
+                        const poll = setInterval(() => {
+                            document.querySelectorAll('div[data-testid="placementTracking"]').forEach(container => {
+                                if (container) {
+                                    container.innerHTML = container.innerHTML;
+                                    clearInterval(poll);
+                                }
+                            });
+                        }, 250);
+                    }))
                         .then(() => page.waitForSelector('article', { timeout: getTimeout() }))
                         .catch((err) => {
                         if (err.name !== 'TimeoutError')
                             throw err;
                         logger.warn(`navigation timed out at ${getTimerTime()} seconds`);
-                        return Promise.resolve(null);
-                    });
-                    const captureLoadedPage = () => page.addScriptTag({
-                        content: 'document.documentElement.scrollTop=0;',
+                        return null;
                     })
+                        .then(handle => {
+                        if (handle === null)
+                            throw new puppeteer.errors.TimeoutError();
+                    })
+                        .then(() => page.addScriptTag({
+                        content: 'document.documentElement.scrollTop=0;',
+                    }))
                         .then(() => util_1.promisify(setTimeout)(getTimeout()))
                         .then(() => page.screenshot())
                         .then(screenshot => {
@@ -180,30 +184,13 @@ class Webshot extends CallableInstance {
                             }
                         }).parse(screenshot);
                     })
-                        .then(() => page.close());
-                    article.then(elementHandle => {
-                        if (elementHandle === null) {
-                            logger.error(`error shooting webshot for ${url}, could not load web page of tweet`);
-                            page.close();
-                            resolve({ base64: '', boundary: 0 });
-                        }
-                        else {
-                            waitForSelectorUntilIdle('video').then(() => {
-                                logger.info('found video, freezing it...');
-                                return page.$x('//article//div[@data-testid="placementTracking"]')
-                                    .then(candidateHandles => {
-                                    if (candidateHandles.length)
-                                        return candidateHandles[0];
-                                });
-                            })
-                                .then(handle => page.evaluate((el) => el.innerHTML = el.innerHTML, handle))
-                                .catch((err) => {
-                                if (err.name !== 'TimeoutError')
-                                    throw err;
-                            })
-                                .then(captureLoadedPage);
-                        }
-                    });
+                        .catch(err => {
+                        if (err.name !== 'TimeoutError')
+                            throw err;
+                        logger.error(`error shooting webshot for ${url}, could not load web page of tweet`);
+                        resolve({ base64: '', boundary: 0 });
+                    })
+                        .finally(() => page.close());
                 })
                     .catch(reject);
             });

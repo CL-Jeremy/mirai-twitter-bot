@@ -10,7 +10,7 @@
   "mode": 0,
   "resume_on_start": false,
   "work_interval": 60,
-  "webshot_delay": 5000,
+  "webshot_delay": 10000,
   "lockfile": "subscriber.lock",
   "loglevel": "info"
 }
