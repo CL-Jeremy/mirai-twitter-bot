@@ -42,6 +42,22 @@ export class ScreenNameNormalizer {
   }
 }
 
+export const bigNumPlus = (num1: string, num2: string) => {
+  const split = (num: string) =>
+    num.replace(/^(-?)(\d+)(\d{15})$/, '$1$2,$1$3')
+    .replace(/^([^,]*)$/, '0,$1').split(',')
+    .map(Number);
+  let [high, low] = [split(num1), split(num2)].reduce((a, b) => [a[0] + b[0], a[1] + b[1]]);
+  const [highSign, lowSign] = [high, low].map(Math.sign);
+  if (highSign === 0) return low.toString();
+  if (highSign !== lowSign) {
+    [high, low] = [high - highSign, low - lowSign * 10 ** 15];
+  } else {
+    [high, low] = [high + ~~(low / 10 ** 15), low % 10 ** 15];
+  }
+  return `${high}${Math.abs(low).toString().padStart(15, '0')}`;
+};
+
 export let sendTweet = (id: string, receiver: IChat): void => {
   throw Error();
 };
@@ -172,7 +188,10 @@ export default class {
       tweet_mode: 'extended',
     };
     return this.client.get(endpoint, config)
-    .then((tweet: Tweet) => this.workOnTweets([tweet], sender));
+    .then((tweet: Tweet) => {
+      logger.debug(`api returned tweet ${JSON.stringify(tweet)} for query id=${id}`);
+      return this.workOnTweets([tweet], sender);
+    });
   }
 
   private sendTweets = (source?: string, ...to: IChat[]) =>

@@ -53,7 +53,7 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
     if (match[1]) {
         const matchStatus = match[1].match(/\/status\/(\d+)/);
         if (matchStatus) {
-            offset = String(matchStatus[1] - 1);
+            offset = twitter_1.bigNumPlus(matchStatus[1], '-1');
             delete match[1];
         }
     }

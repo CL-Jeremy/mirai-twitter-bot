@@ -3,7 +3,7 @@ import * as path from 'path';
 
 import { relativeDate } from './datetime';
 import { getLogger } from './loggers';
-import { sendTweet, ScreenNameNormalizer as normalizer } from './twitter';
+import { bigNumPlus, sendTweet, ScreenNameNormalizer as normalizer } from './twitter';
 
 const logger = getLogger('command');
 
@@ -58,7 +58,7 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
   if (match[1]) {
     const matchStatus = match[1].match(/\/status\/(\d+)/);
     if (matchStatus) {
-      offset = String(matchStatus[1] as unknown as number - 1);
+      offset = bigNumPlus(matchStatus[1], '-1');
       delete match[1];
     }
   }

@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendTweet = exports.ScreenNameNormalizer = void 0;
+exports.sendTweet = exports.bigNumPlus = exports.ScreenNameNormalizer = void 0;
 const fs = require("fs");
 const path = require("path");
 const Twitter = require("twitter");
@@ -34,6 +34,22 @@ class ScreenNameNormalizer {
 }
 exports.ScreenNameNormalizer = ScreenNameNormalizer;
 ScreenNameNormalizer.normalize = (username) => username.toLowerCase().replace(/^@/, '');
+exports.bigNumPlus = (num1, num2) => {
+    const split = (num) => num.replace(/^(-?)(\d+)(\d{15})$/, '$1$2,$1$3')
+        .replace(/^([^,]*)$/, '0,$1').split(',')
+        .map(Number);
+    let [high, low] = [split(num1), split(num2)].reduce((a, b) => [a[0] + b[0], a[1] + b[1]]);
+    const [highSign, lowSign] = [high, low].map(Math.sign);
+    if (highSign === 0)
+        return low.toString();
+    if (highSign !== lowSign) {
+        [high, low] = [high - highSign, low - lowSign * Math.pow(10, 15)];
+    }
+    else {
+        [high, low] = [high + ~~(low / Math.pow(10, 15)), low % Math.pow(10, 15)];
+    }
+    return `${high}${Math.abs(low).toString().padStart(15, '0')}`;
+};
 exports.sendTweet = (id, receiver) => {
     throw Error();
 };
@@ -94,7 +110,10 @@ class default_1 {
                 tweet_mode: 'extended',
             };
             return this.client.get(endpoint, config)
-                .then((tweet) => this.workOnTweets([tweet], sender));
+                .then((tweet) => {
+                logger.debug(`api returned tweet ${JSON.stringify(tweet)} for query id=${id}`);
+                return this.workOnTweets([tweet], sender);
+            });
         };
         this.sendTweets = (source, ...to) => (msg, text, author) => {
             to.forEach(subscriber => {
