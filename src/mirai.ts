@@ -4,6 +4,7 @@ import Mirai, { MessageType } from 'mirai-ts';
 import MiraiMessage from 'mirai-ts/dist/message';
 import * as temp from 'temp';
 
+import { view } from './command';
 import command from './helper';
 import { getLogger } from './loggers';
 
@@ -14,9 +15,9 @@ interface IQQProps {
   host: string;
   port: number;
   bot_id: number;
-  list(chat: IChat, args: string[]): string;
-  sub(chat: IChat, args: string[]): string;
-  unsub(chat: IChat, args: string[]): string;
+  list(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
+  sub(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
+  unsub(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
 }
 
 const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
@@ -119,23 +120,28 @@ export default class {
       }
       const cmdObj = command(msg.plain);
       switch (cmdObj.cmd) {
+        case 'twitter_view':
+        case 'twitter_get':
+          view(chat, cmdObj.args, msg.reply);
+          break;
         case 'twitter_sub':
         case 'twitter_subscribe':
-          msg.reply(this.botInfo.sub(chat, cmdObj.args));
+          this.botInfo.sub(chat, cmdObj.args, msg.reply);
           break;
         case 'twitter_unsub':
         case 'twitter_unsubscribe':
-          msg.reply(this.botInfo.unsub(chat, cmdObj.args));
+          this.botInfo.unsub(chat, cmdObj.args, msg.reply);
           break;
         case 'ping':
         case 'twitter':
-          msg.reply(this.botInfo.list(chat, cmdObj.args));
+          this.botInfo.list(chat, cmdObj.args, msg.reply);
           break;
         case 'help':
           msg.reply(`推特搬运机器人：
 /twitter - 查询当前聊天中的订阅
 /twitter_subscribe [链接] - 订阅 Twitter 搬运
-/twitter_unsubscribe [链接] - 退订 Twitter 搬运`);
+/twitter_unsubscribe [链接] - 退订 Twitter 搬运
+/twitter_view [链接] - 查看推文`);
       }
     });
 }
