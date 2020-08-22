@@ -20,7 +20,61 @@ interface IWorkerOption {
   mode: number;
 }
 
+export class ScreenNameNormalizer {
+
+  // tslint:disable-next-line: variable-name
+  public static _queryUser: (username: string) => Promise<string>;
+
+  public static normalize = (username: string) => username.toLowerCase().replace(/^@/, '');
+
+  public static async normalizeLive(username: string) {
+    if (this._queryUser) {
+      return await this._queryUser(username)
+      .catch((err: {code: number, message: string}[]) => {
+        if (err[0].code !== 50) {
+          logger.warn(`error looking up user: ${err[0].message}`);
+          return username;
+        }
+        return null;
+      });
+    }
+    return this.normalize(username);
+  }
+}
+
+export let sendTweet = (id: string, receiver: IChat): void => {
+  throw Error();
+};
+
 const logger = getLogger('twitter');
+const maxTrials = 3;
+const uploadTimeout = 10000;
+const retryInterval = 1500;
+const ordinal = (n: number) => {
+  switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+};
+const retryOnError = <T, U>(
+  doWork: () => Promise<T>,
+  onRetry: (error, count: number, terminate: (defaultValue: U) => void) => void
+) => new Promise<T | U>(resolve => {
+  const retry = (reason, count: number) => {
+    setTimeout(() => {
+      let terminate = false;
+      onRetry(reason, count, defaultValue => { terminate = true; resolve(defaultValue); });
+      if (!terminate) doWork().then(resolve).catch(error => retry(error, count + 1));
+    }, retryInterval);
+  };
+  doWork().then(resolve).catch(error => retry(error, 1));
+});
 
 export type FullUser = TwitterTypes.FullUser;
 export type Entities = TwitterTypes.Entities;
@@ -63,6 +117,17 @@ export default class {
     this.bot = opt.bot;
     this.webshotDelay = opt.webshotDelay;
     this.mode = opt.mode;
+    ScreenNameNormalizer._queryUser = this.queryUser;
+    sendTweet = (id, receiver) => {
+      this.getTweet(id, this.sendTweets(`tweet ${id}`, receiver))
+      .catch((err: {code: number, message: string}[]) => {
+        if (err[0].code !== 144) {
+          logger.warn(`error retrieving tweet: ${err[0].message}`);
+          this.bot.sendTo(receiver, `获取推文时出现错误：${err[0].message}`);
+        }
+        this.bot.sendTo(receiver, '找不到请求的推文，它可能已被删除。');
+      });
+    };
   }
 
   public launch = () => {
@@ -70,6 +135,62 @@ export default class {
       this.mode,
       () => setTimeout(this.work, this.workInterval * 1000)
     );
+  }
+
+  public queryUser = (username: string) =>
+    this.client.get('users/show', {screen_name: username})
+    .then((user: FullUser) => user.screen_name)
+
+  private workOnTweets = (
+    tweets: Tweets,
+    sendTweets: (msg: MessageChain, text: string, author: string) => void
+  ) => {
+    const uploader = (
+      message: ReturnType<typeof Message.Image>,
+      lastResort: (...args) => ReturnType<typeof Message.Plain>
+    ) => {
+      let timeout = uploadTimeout;
+      return retryOnError(() =>
+        this.bot.uploadPic(message, timeout).then(() => message),
+      (_, count, terminate: (defaultValue: ReturnType<typeof Message.Plain>) => void) => {
+        if (count <= maxTrials) {
+          timeout *= (count + 2) / (count + 1);
+          logger.warn(`retry uploading for the ${ordinal(count)} time...`);
+        } else {
+          logger.warn(`${count - 1} consecutive failures while uploading, trying plain text instead...`);
+          terminate(lastResort());
+        }
+      });
+    };
+    return this.webshot(tweets, uploader, sendTweets, this.webshotDelay);
+  }
+
+  public getTweet = (id: string, sender: (msg: MessageChain, text: string, author: string) => void) => {
+    const endpoint = 'statuses/show';
+    const config = {
+      id,
+      tweet_mode: 'extended',
+    };
+    return this.client.get(endpoint, config)
+    .then((tweet: Tweet) => this.workOnTweets([tweet], sender));
+  }
+
+  private sendTweets = (source?: string, ...to: IChat[]) =>
+  (msg: MessageChain, text: string, author: string) => {
+    to.forEach(subscriber => {
+      logger.info(`pushing data${source ? ` of ${source}` : ''} to ${JSON.stringify(subscriber)}`);
+      retryOnError(
+        () => this.bot.sendTo(subscriber, msg),
+      (_, count, terminate: (doNothing: Promise<void>) => void) => {
+        if (count <= maxTrials) {
+          logger.warn(`retry sending to ${subscriber.chatID} for the ${ordinal(count)} time...`);
+        } else {
+          logger.warn(`${count - 1} consecutive failures while sending` +
+            'message chain, trying plain text instead...');
+          terminate(this.bot.sendTo(subscriber, author + text));
+        }
+      });
+    });
   }
 
   public work = () => {
@@ -101,11 +222,18 @@ export default class {
       let config: any;
       let endpoint: string;
       if (match) {
-        config = {
-          owner_screen_name: match[1],
-          slug: match[2],
-          tweet_mode: 'extended',
-        };
+        if (match[1] === 'i') {
+          config = {
+            list_id: match[2],
+            tweet_mode: 'extended',
+          };
+        } else {
+          config = {
+            owner_screen_name: match[1],
+            slug: match[2],
+            tweet_mode: 'extended',
+          };
+        }
         endpoint = 'lists/statuses';
       } else {
         match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)/);
@@ -161,71 +289,7 @@ export default class {
       }
       if (tweets.length === 0) { updateDate(); updateOffset(); return; }
 
-      const maxCount = 3;
-      const uploadTimeout = 10000;
-      const retryInterval = 1500;
-      const ordinal = (n: number) => {
-        switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
-          case 1:
-            return `${n}st`;
-          case 2:
-            return `${n}nd`;
-          case 3:
-            return `${n}rd`;
-          default:
-            return `${n}th`;
-        }
-      };
-
-      const retryOnError = <T, U>(
-        doWork: () => Promise<T>,
-        onRetry: (error, count: number, terminate: (defaultValue: U) => void) => void
-      ) => new Promise<T | U>(resolve => {
-        const retry = (reason, count: number) => {
-          setTimeout(() => {
-            let terminate = false;
-            onRetry(reason, count, defaultValue => { terminate = true; resolve(defaultValue); });
-            if (!terminate) doWork().then(resolve).catch(error => retry(error, count + 1));
-          }, retryInterval);
-        };
-        doWork().then(resolve).catch(error => retry(error, 1));
-      });
-
-      const uploader = (
-        message: ReturnType<typeof Message.Image>,
-        lastResort: (...args) => ReturnType<typeof Message.Plain>
-      ) => {
-        let timeout = uploadTimeout;
-        return retryOnError(() =>
-          this.bot.uploadPic(message, timeout).then(() => message),
-        (_, count, terminate: (defaultValue: ReturnType<typeof Message.Plain>) => void) => {
-          if (count <= maxCount) {
-            timeout *= (count + 2) / (count + 1);
-            logger.warn(`retry uploading for the ${ordinal(count)} time...`);
-          } else {
-            logger.warn(`${count - 1} consecutive failures while uploading, trying plain text instead...`);
-            terminate(lastResort());
-          }
-        });
-      };
-
-      const sendTweets = (msg: MessageChain, text: string, author: string) => {
-        currentThread.subscribers.forEach(subscriber => {
-          logger.info(`pushing data of thread ${currentFeed} to ${JSON.stringify(subscriber)}`);
-          retryOnError(
-            () => this.bot.sendTo(subscriber, msg),
-          (_, count, terminate: (doNothing: Promise<void>) => void) => {
-            if (count <= maxCount) {
-              logger.warn(`retry sending to ${subscriber.chatID} for the ${ordinal(count)} time...`);
-            } else {
-              logger.warn(`${count - 1} consecutive failures while sending` +
-                'message chain, trying plain text instead...');
-              terminate(this.bot.sendTo(subscriber, author + text));
-            }
-          });
-        });
-      };
-      return this.webshot(tweets, uploader, sendTweets, this.webshotDelay)
+      return this.workOnTweets(tweets, this.sendTweets(`thread ${currentFeed}`, ...currentThread.subscribers))
       .then(updateDate).then(updateOffset);
     })
       .then(() => {

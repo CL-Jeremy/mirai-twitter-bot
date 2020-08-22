@@ -15,6 +15,7 @@ const fs_1 = require("fs");
 const mirai_ts_1 = require("mirai-ts");
 const message_1 = require("mirai-ts/dist/message");
 const temp = require("temp");
+const command_1 = require("./command");
 const helper_1 = require("./helper");
 const loggers_1 = require("./loggers");
 const logger = loggers_1.getLogger('qqbot');
@@ -110,23 +111,28 @@ class default_1 {
                 }
                 const cmdObj = helper_1.default(msg.plain);
                 switch (cmdObj.cmd) {
+                    case 'twitterpic_view':
+                    case 'twitterpic_get':
+                        command_1.view(chat, cmdObj.args, msg.reply);
+                        break;
                     case 'twitterpic_sub':
                     case 'twitterpic_subscribe':
-                        msg.reply(this.botInfo.sub(chat, cmdObj.args));
+                        this.botInfo.sub(chat, cmdObj.args, msg.reply);
                         break;
                     case 'twitterpic_unsub':
                     case 'twitterpic_unsubscribe':
-                        msg.reply(this.botInfo.unsub(chat, cmdObj.args));
+                        this.botInfo.unsub(chat, cmdObj.args, msg.reply);
                         break;
                     case 'ping':
                     case 'twitterpic':
-                        msg.reply(this.botInfo.list(chat, cmdObj.args));
+                        this.botInfo.list(chat, cmdObj.args, msg.reply);
                         break;
                     case 'help':
-                        msg.reply(`推特图片搬运机器人：
-/twitterpic - 查询当前聊天中的订阅
-/twitterpic_subscribe [链接] - 订阅 Twitter 图片搬运
-/twitterpic_unsubscribe [链接] - 退订 Twitter 图片搬运`);
+                        msg.reply(`推特媒体推文搬运机器人：
+/twitterpic - 查询当前聊天中的媒体推文订阅
+/twitterpic_subscribe [链接] - 订阅 Twitter 媒体推文搬运
+/twitterpic_unsubscribe [链接] - 退订 Twitter 媒体推文搬运
+/twitterpic_view [链接] - 查看推文（无关是否包含媒体）`);
                 }
             });
         };

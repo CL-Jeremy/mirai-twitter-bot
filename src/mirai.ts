@@ -4,6 +4,7 @@ import Mirai, { MessageType } from 'mirai-ts';
 import MiraiMessage from 'mirai-ts/dist/message';
 import * as temp from 'temp';
 
+import { view } from './command';
 import command from './helper';
 import { getLogger } from './loggers';
 
@@ -14,9 +15,9 @@ interface IQQProps {
   host: string;
   port: number;
   bot_id: number;
-  list(chat: IChat, args: string[]): string;
-  sub(chat: IChat, args: string[]): string;
-  unsub(chat: IChat, args: string[]): string;
+  list(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
+  sub(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
+  unsub(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
 }
 
 const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
@@ -119,23 +120,28 @@ export default class {
       }
       const cmdObj = command(msg.plain);
       switch (cmdObj.cmd) {
+        case 'twitterpic_view':
+        case 'twitterpic_get':
+          view(chat, cmdObj.args, msg.reply);
+          break;
         case 'twitterpic_sub':
         case 'twitterpic_subscribe':
-          msg.reply(this.botInfo.sub(chat, cmdObj.args));
+          this.botInfo.sub(chat, cmdObj.args, msg.reply);
           break;
         case 'twitterpic_unsub':
         case 'twitterpic_unsubscribe':
-          msg.reply(this.botInfo.unsub(chat, cmdObj.args));
+          this.botInfo.unsub(chat, cmdObj.args, msg.reply);
           break;
         case 'ping':
         case 'twitterpic':
-          msg.reply(this.botInfo.list(chat, cmdObj.args));
+          this.botInfo.list(chat, cmdObj.args, msg.reply);
           break;
         case 'help':
-          msg.reply(`推特图片搬运机器人：
-/twitterpic - 查询当前聊天中的订阅
-/twitterpic_subscribe [链接] - 订阅 Twitter 图片搬运
-/twitterpic_unsubscribe [链接] - 退订 Twitter 图片搬运`);
+          msg.reply(`推特媒体推文搬运机器人：
+/twitterpic - 查询当前聊天中的媒体推文订阅
+/twitterpic_subscribe [链接] - 订阅 Twitter 媒体推文搬运
+/twitterpic_unsubscribe [链接] - 退订 Twitter 媒体推文搬运
+/twitterpic_view [链接] - 查看推文（无关是否包含媒体）`);
       }
     });
 }
