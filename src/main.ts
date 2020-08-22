@@ -135,9 +135,9 @@ const qq = new QQBot({
   host: config.mirai_http_host,
   port: config.mirai_http_port,
   bot_id: config.mirai_bot_qq,
-  list: (c, a) => list(c, a, lock),
-  sub: (c, a) => sub(c, a, lock, config.lockfile),
-  unsub: (c, a) => unsub(c, a, lock, config.lockfile),
+  list: (c, a, cb) => list(c, a, cb, lock),
+  sub: (c, a, cb) => sub(c, a, cb, lock, config.lockfile),
+  unsub: (c, a, cb) => unsub(c, a, cb, lock, config.lockfile),
 });
 
 const worker = new Worker({

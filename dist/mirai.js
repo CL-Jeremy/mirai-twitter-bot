@@ -15,6 +15,7 @@ const fs_1 = require("fs");
 const mirai_ts_1 = require("mirai-ts");
 const message_1 = require("mirai-ts/dist/message");
 const temp = require("temp");
+const command_1 = require("./command");
 const helper_1 = require("./helper");
 const loggers_1 = require("./loggers");
 const logger = loggers_1.getLogger('qqbot');
@@ -110,23 +111,28 @@ class default_1 {
                 }
                 const cmdObj = helper_1.default(msg.plain);
                 switch (cmdObj.cmd) {
+                    case 'twitter_view':
+                    case 'twitter_get':
+                        command_1.view(chat, cmdObj.args, msg.reply);
+                        break;
                     case 'twitter_sub':
                     case 'twitter_subscribe':
-                        msg.reply(this.botInfo.sub(chat, cmdObj.args));
+                        this.botInfo.sub(chat, cmdObj.args, msg.reply);
                         break;
                     case 'twitter_unsub':
                     case 'twitter_unsubscribe':
-                        msg.reply(this.botInfo.unsub(chat, cmdObj.args));
+                        this.botInfo.unsub(chat, cmdObj.args, msg.reply);
                         break;
                     case 'ping':
                     case 'twitter':
-                        msg.reply(this.botInfo.list(chat, cmdObj.args));
+                        this.botInfo.list(chat, cmdObj.args, msg.reply);
                         break;
                     case 'help':
                         msg.reply(`推特搬运机器人：
 /twitter - 查询当前聊天中的订阅
 /twitter_subscribe [链接] - 订阅 Twitter 搬运
-/twitter_unsubscribe [链接] - 退订 Twitter 搬运`);
+/twitter_unsubscribe [链接] - 退订 Twitter 搬运
+/twitter_view [链接] - 查看推文`);
                 }
             });
         };

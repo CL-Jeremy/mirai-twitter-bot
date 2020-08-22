@@ -127,9 +127,9 @@ const qq = new mirai_1.default({
     host: config.mirai_http_host,
     port: config.mirai_http_port,
     bot_id: config.mirai_bot_qq,
-    list: (c, a) => command_1.list(c, a, lock),
-    sub: (c, a) => command_1.sub(c, a, lock, config.lockfile),
-    unsub: (c, a) => command_1.unsub(c, a, lock, config.lockfile),
+    list: (c, a, cb) => command_1.list(c, a, cb, lock),
+    sub: (c, a, cb) => command_1.sub(c, a, cb, lock, config.lockfile),
+    unsub: (c, a, cb) => command_1.unsub(c, a, cb, lock, config.lockfile),
 });
 const worker = new twitter_1.default({
     consumer_key: config.twitter_consumer_key,
