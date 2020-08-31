@@ -1,0 +1,14 @@
+[Unit]
+Description=Mirai QQ bot kickstarter
+
+[Service]
+WorkingDirectory=%h/mirai-twitter-bot
+ExecStart=%h/mirai-twitter-bot/miraiOK_linux_amd64
+ExecStartPost=/bin/sleep 15
+#StandardOutput=append:%h/mirai-twitter-bot/miraiOK.log
+#StandardError=append:%h/mirai-twitter-bot/miraiOK.log
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

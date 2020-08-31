@@ -38,6 +38,24 @@
 
 示例文件在 [`config.example.json`](./config.example.json)
 
+## 系统服务
+
+可以使用 [`systemd`](./systemd) 目录里的服务文件设置成自动启动服务
+```
+$ cd
+$ git clone https://github.com/CL-Jeremy/mirai-twitter-bot
+$ cd mirai-twitter-bot
+$ npm i
+$ wget -S http://t.imlxy.net:64724/mirai/MiraiOK/miraiOK_linux_amd64
+$ chmod +x miraiOK_linux_amd64
+$ wget -qO- https://api.github.com/repos/project-mirai/mirai-api-http/releases/latest | grep "browser" | cut -d'"' -f4 | wget -Sqi- -Pplugins
+$ rsync -a systemd ~/.config/
+$ systemctl --user daemon-reload
+$ systemctl --user enable twitterbot.service
+$ loginctl enable-linger
+```
+注：如果想在本地文件夹保存日志，请取消注释两个服务定义中相应的行，阅读时可以使用 `tail -f`
+
 ## Bug
 
 - 好友消息的图片有可能会失效或直接无法接收（后者会被转换为 `[失败的图片：<地址>]` 格式，然后整条消息会以纯文本模式重发）

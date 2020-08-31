@@ -1,0 +1,11 @@
+[Unit]
+Description=Mirai QQ Puppeteer on-demand launcher
+
+[Service]
+WorkingDirectory=%h/mirai-twitter-bot
+ExecStart=%h/mirai-twitter-bot/bin/chromium
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
