@@ -11,9 +11,12 @@ import { promisify } from 'util';
 import gifski from './gifski';
 import { getLogger } from './loggers';
 import { Message, MessageChain } from './mirai';
-import { Tweets } from './twitter';
+import { MediaEntity, Tweets } from './twitter';
 
 const xmlEntities = new XmlEntities();
+
+const chainPromises = <T>(promises: Promise<T>[]) =>
+  promises.reduce((p1, p2) => p1.then(() => p2), Promise.resolve());
 
 const ZHType = (type: string) => new class extends String {
   public type = super.toString();
@@ -63,6 +66,10 @@ extends CallableInstance<
     .then(() => this.connect(onready));
   }
 
+  private extendEntity = (media: MediaEntity) => {
+    logger.info('not working on a tweet');
+  }
+
   private renderWebshot = (url: string, height: number, webshotDelay: number): Promise<string> => {
     const jpeg = (data: Readable) => data.pipe(sharp()).jpeg({quality: 90, trellisQuantisation: true});
     const sharpToBase64 = (pic: sharp.Sharp) => new Promise<string>(resolve => {
@@ -110,6 +117,29 @@ extends CallableInstance<
             .then(handle => {
               if (handle === null) throw new puppeteer.errors.TimeoutError();
             })
+            .then(() => page.evaluate(() => {
+              const cardImg = document.querySelector('div[data-testid^="card.layout"][data-testid$=".media"] img');
+              if (typeof cardImg?.getAttribute('src') === 'string') {
+                const match = cardImg?.getAttribute('src')
+                  .match(/^(.*\/card_img\/(\d+)\/.+\?format=.*)&name=/);
+                if (match) {
+                  // tslint:disable-next-line: variable-name
+                  const [media_url_https, id_str] = match.slice(1);
+                  return {
+                    media_url: media_url_https.replace(/^https/, 'http'),
+                    media_url_https,
+                    url: '',
+                    display_url: '',
+                    expanded_url: '',
+                    type: 'photo',
+                    id: Number(id_str),
+                    id_str,
+                    sizes: undefined,
+                  };
+                }
+              }
+            }))
+            .then(cardImg => { if (cardImg) this.extendEntity(cardImg); })
             .then(() => page.addScriptTag({
               content: 'document.documentElement.scrollTop=0;',
             }))
@@ -256,7 +286,7 @@ extends CallableInstance<
               throw Error(err);
             }
         }
-      })(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])
+      })(url.match(/\?format=([a-z]+)&/)[1])
     ).then(typedData => 
       `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`
     );
@@ -303,6 +333,15 @@ extends CallableInstance<
       // invoke webshot
       if (this.mode === 0) {
         const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
+        this.extendEntity = (cardImg: MediaEntity) => {
+          originTwi.extended_entities = {
+            ...originTwi.extended_entities,
+            media: [
+              ...originTwi.extended_entities?.media ?? [],
+              cardImg,
+            ],
+          };
+        };
         promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
           .then(base64url => {
             if (base64url) return uploader(Message.Image('', base64url, url), () => Message.Plain(author + text));
@@ -313,12 +352,13 @@ extends CallableInstance<
           });
       }
       // fetch extra entities
-      if (1 - this.mode % 2) {
+      // tslint:disable-next-line: curly
+      if (1 - this.mode % 2) promise = promise.then(() => {
         if (originTwi.extended_entities) {
-          originTwi.extended_entities.media.forEach(media => {
+          return chainPromises(originTwi.extended_entities.media.map(media => {
             let url: string;
             if (media.type === 'photo') {
-              url = media.media_url_https + ':orig';
+              url = media.media_url_https.replace(/\.([a-z]+)$/, '?format=$1') + '&name=orig';
             } else {
               url = media.video_info.variants
                 .filter(variant => variant.bitrate !== undefined)
@@ -326,7 +366,7 @@ extends CallableInstance<
                 .map(variant => variant.url)[0]; // largest video
             }
             const altMessage = Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
-            promise = promise.then(() => this.fetchMedia(url))
+            return this.fetchMedia(url)
               .then(base64url =>
                 uploader(Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
               )
@@ -337,21 +377,29 @@ extends CallableInstance<
               .then(msg => {
                 messageChain.push(msg);
               });
-          });
+          }));
         }
-      }
+      });
       // append URLs, if any
       if (this.mode === 0) {
         if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
           promise = promise.then(() => {
             const urls = originTwi.entities.urls
               .filter(urlObj => urlObj.indices[0] < originTwi.display_text_range[1])
-              .map(urlObj => urlObj.expanded_url);
+              .map(urlObj => `\ud83d\udd17 ${urlObj.expanded_url}`);
             if (urls.length) {
               messageChain.push(Message.Plain(urls.join('\n')));
             }
           });
         }
+      }
+      // refer to quoted tweet, if any
+      if (originTwi.is_quote_status) {
+        promise = promise.then(() => {
+          messageChain.push(
+            Message.Plain(`回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_permalink.expanded}`)
+          );
+        });
       }
       promise.then(() => {
         logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);

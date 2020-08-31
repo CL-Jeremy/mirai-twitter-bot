@@ -20,6 +20,7 @@ const gifski_1 = require("./gifski");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
 const xmlEntities = new html_entities_1.XmlEntities();
+const chainPromises = (promises) => promises.reduce((p1, p2) => p1.then(() => p2), Promise.resolve());
 const ZHType = (type) => new class extends String {
     constructor() {
         super(...arguments);
@@ -50,6 +51,9 @@ class Webshot extends CallableInstance {
             logger.warn('trying to reconnect in 2.5s...');
             return util_1.promisify(setTimeout)(2500)
                 .then(() => this.connect(onready));
+        };
+        this.extendEntity = (media) => {
+            logger.info('not working on a tweet');
         };
         this.renderWebshot = (url, height, webshotDelay) => {
             const jpeg = (data) => data.pipe(sharp()).jpeg({ quality: 90, trellisQuantisation: true });
@@ -100,6 +104,29 @@ class Webshot extends CallableInstance {
                         if (handle === null)
                             throw new puppeteer.errors.TimeoutError();
                     })
+                        .then(() => page.evaluate(() => {
+                        const cardImg = document.querySelector('div[data-testid^="card.layout"][data-testid$=".media"] img');
+                        if (typeof (cardImg === null || cardImg === void 0 ? void 0 : cardImg.getAttribute('src')) === 'string') {
+                            const match = cardImg === null || cardImg === void 0 ? void 0 : cardImg.getAttribute('src').match(/^(.*\/card_img\/(\d+)\/.+\?format=.*)&name=/);
+                            if (match) {
+                                // tslint:disable-next-line: variable-name
+                                const [media_url_https, id_str] = match.slice(1);
+                                return {
+                                    media_url: media_url_https.replace(/^https/, 'http'),
+                                    media_url_https,
+                                    url: '',
+                                    display_url: '',
+                                    expanded_url: '',
+                                    type: 'photo',
+                                    id: Number(id_str),
+                                    id_str,
+                                    sizes: undefined,
+                                };
+                            }
+                        }
+                    }))
+                        .then(cardImg => { if (cardImg)
+                        this.extendEntity(cardImg); })
                         .then(() => page.addScriptTag({
                         content: 'document.documentElement.scrollTop=0;',
                     }))
@@ -246,7 +273,7 @@ class Webshot extends CallableInstance {
                             throw Error(err);
                         }
                 }
-            }))(url.split('/').slice(-1)[0].match(/\.([^:?&]+)/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
+            }))(url.match(/\?format=([a-z]+)&/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
         };
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
@@ -286,6 +313,13 @@ class Webshot extends CallableInstance {
             // invoke webshot
             if (this.mode === 0) {
                 const url = `https://mobile.twitter.com/${twi.user.screen_name}/status/${twi.id_str}`;
+                this.extendEntity = (cardImg) => {
+                    var _a, _b;
+                    originTwi.extended_entities = Object.assign(Object.assign({}, originTwi.extended_entities), { media: [
+                            ...(_b = (_a = originTwi.extended_entities) === null || _a === void 0 ? void 0 : _a.media) !== null && _b !== void 0 ? _b : [],
+                            cardImg,
+                        ] });
+                };
                 promise = promise.then(() => this.renderWebshot(url, 1920, webshotDelay))
                     .then(base64url => {
                     if (base64url)
@@ -298,44 +332,52 @@ class Webshot extends CallableInstance {
                 });
             }
             // fetch extra entities
-            if (1 - this.mode % 2) {
-                if (originTwi.extended_entities) {
-                    originTwi.extended_entities.media.forEach(media => {
-                        let url;
-                        if (media.type === 'photo') {
-                            url = media.media_url_https + ':orig';
-                        }
-                        else {
-                            url = media.video_info.variants
-                                .filter(variant => variant.bitrate !== undefined)
-                                .sort((var1, var2) => var2.bitrate - var1.bitrate)
-                                .map(variant => variant.url)[0]; // largest video
-                        }
-                        const altMessage = mirai_1.Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
-                        promise = promise.then(() => this.fetchMedia(url))
-                            .then(base64url => uploader(mirai_1.Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage))
-                            .catch(error => {
-                            logger.warn('unable to fetch media, sending plain text instead...');
-                            return altMessage;
-                        })
-                            .then(msg => {
-                            messageChain.push(msg);
-                        });
-                    });
-                }
-            }
+            // tslint:disable-next-line: curly
+            if (1 - this.mode % 2)
+                promise = promise.then(() => {
+                    if (originTwi.extended_entities) {
+                        return chainPromises(originTwi.extended_entities.media.map(media => {
+                            let url;
+                            if (media.type === 'photo') {
+                                url = media.media_url_https.replace(/\.([a-z]+)$/, '?format=$1') + '&name=orig';
+                            }
+                            else {
+                                url = media.video_info.variants
+                                    .filter(variant => variant.bitrate !== undefined)
+                                    .sort((var1, var2) => var2.bitrate - var1.bitrate)
+                                    .map(variant => variant.url)[0]; // largest video
+                            }
+                            const altMessage = mirai_1.Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
+                            return this.fetchMedia(url)
+                                .then(base64url => uploader(mirai_1.Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage))
+                                .catch(error => {
+                                logger.warn('unable to fetch media, sending plain text instead...');
+                                return altMessage;
+                            })
+                                .then(msg => {
+                                messageChain.push(msg);
+                            });
+                        }));
+                    }
+                });
             // append URLs, if any
             if (this.mode === 0) {
                 if (originTwi.entities && originTwi.entities.urls && originTwi.entities.urls.length) {
                     promise = promise.then(() => {
                         const urls = originTwi.entities.urls
                             .filter(urlObj => urlObj.indices[0] < originTwi.display_text_range[1])
-                            .map(urlObj => urlObj.expanded_url);
+                            .map(urlObj => `\ud83d\udd17 ${urlObj.expanded_url}`);
                         if (urls.length) {
                             messageChain.push(mirai_1.Message.Plain(urls.join('\n')));
                         }
                     });
                 }
+            }
+            // refer to quoted tweet, if any
+            if (originTwi.is_quote_status) {
+                promise = promise.then(() => {
+                    messageChain.push(mirai_1.Message.Plain(`回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_permalink.expanded}`));
+                });
             }
             promise.then(() => {
                 logger.info(`done working on ${twi.user.screen_name}/${twi.id_str}, message chain:`);
