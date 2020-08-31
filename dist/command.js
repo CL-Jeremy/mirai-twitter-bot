@@ -78,12 +78,12 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
     if (realLink)
         return subscribeTo(realLink);
     const [rawUserName, more] = match;
-    if (rawUserName.toLowerCase() === 'i' && more.match(/lists\/(\d+)/)) {
+    if (rawUserName.toLowerCase() === 'i' && (more === null || more === void 0 ? void 0 : more.match(/lists\/(\d+)/))) {
         return subscribeTo(linkBuilder('i', more), { addNew: true });
     }
     twitter_1.ScreenNameNormalizer.normalizeLive(rawUserName).then(userName => {
         if (!userName)
-            return reply(`找不到用户 @${rawUserName}。`);
+            return reply(`找不到用户 ${rawUserName.replace(/^@?(.*)$/, '@$1')}。`);
         const link = linkBuilder(userName, more);
         const msg = (offset === '0') ?
             undefined :

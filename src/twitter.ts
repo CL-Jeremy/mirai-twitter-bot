@@ -79,14 +79,10 @@ const retryOnError = <T, U>(
 export type FullUser = TwitterTypes.FullUser;
 export type Entities = TwitterTypes.Entities;
 export type ExtendedEntities = TwitterTypes.ExtendedEntities;
+export type MediaEntity = TwitterTypes.MediaEntity;
 
-interface ITweet {
+interface ITweet extends TwitterTypes.Status {
   user: FullUser;
-  entities: Entities;
-  extended_entities: ExtendedEntities;
-  full_text: string;
-  display_text_range: [number, number];
-  id_str: string;
   retweeted_status?: Tweet;
 }
 

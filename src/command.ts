@@ -81,11 +81,11 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
   if (index > -1) return reply('此聊天已订阅此链接。');
   if (realLink) return subscribeTo(realLink);
   const [rawUserName, more] = match;
-  if (rawUserName.toLowerCase() === 'i' && more.match(/lists\/(\d+)/)) {
+  if (rawUserName.toLowerCase() === 'i' && more?.match(/lists\/(\d+)/)) {
     return subscribeTo(linkBuilder('i', more), {addNew: true});
   }
   normalizer.normalizeLive(rawUserName).then(userName => {
-    if (!userName) return reply(`找不到用户 @${rawUserName}。`);
+    if (!userName) return reply(`找不到用户 ${rawUserName.replace(/^@?(.*)$/, '@$1')}。`);
     const link = linkBuilder(userName, more);
     const msg = (offset === '0') ?
       undefined :
