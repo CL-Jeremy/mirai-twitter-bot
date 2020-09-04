@@ -286,7 +286,11 @@ extends CallableInstance<
               throw Error(err);
             }
         }
-      })(url.match(/\?format=([a-z]+)&/)[1])
+      })((url.match(/\?format=([a-z]+)&/) ?? url.match(/.*\/.*\.([^?]+)/))[1])
+      .catch(() => {
+        logger.warn('unable to find MIME type of fetched media, failing this fetch');
+        throw Error();
+      })
     ).then(typedData => 
       `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`
     );
