@@ -5,7 +5,7 @@ Requires=puppeteer.service
 
 [Service]
 WorkingDirectory=%h/mirai-twitter-bot
-ExecStart=%h/mirai-twitter-bot/bin/twitterbot config.json
+ExecStart=bash -l "%h/mirai-twitter-bot/bin/twitterbot" config.json
 #StandardOutput=append:%h/mirai-twitter-bot/twitterbot.log
 #StandardError=append:%h/mirai-twitter-bot/twitterbot.log
 Restart=always
