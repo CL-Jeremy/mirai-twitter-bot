@@ -258,22 +258,29 @@ class Webshot extends CallableInstance {
                     logger.error(`failed to fetch ${url}: ${err.message}`);
                     reject();
                 });
-            }).then(data => ((ext) => __awaiter(this, void 0, void 0, function* () {
-                switch (ext) {
-                    case 'jpg':
-                        return { mimetype: 'image/jpeg', data };
-                    case 'png':
-                        return { mimetype: 'image/png', data };
-                    case 'mp4':
-                        try {
-                            return { mimetype: 'image/gif', data: yield gif(data) };
-                        }
-                        catch (err) {
-                            logger.error(err);
-                            throw Error(err);
-                        }
-                }
-            }))(url.match(/\?format=([a-z]+)&/)[1])).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
+            }).then(data => {
+                var _a;
+                return ((ext) => __awaiter(this, void 0, void 0, function* () {
+                    switch (ext) {
+                        case 'jpg':
+                            return { mimetype: 'image/jpeg', data };
+                        case 'png':
+                            return { mimetype: 'image/png', data };
+                        case 'mp4':
+                            try {
+                                return { mimetype: 'image/gif', data: yield gif(data) };
+                            }
+                            catch (err) {
+                                logger.error(err);
+                                throw Error(err);
+                            }
+                    }
+                }))(((_a = url.match(/\?format=([a-z]+)&/)) !== null && _a !== void 0 ? _a : url.match(/.*\/.*\.([^?]+)/))[1])
+                    .catch(() => {
+                    logger.warn('unable to find MIME type of fetched media, failing this fetch');
+                    throw Error();
+                });
+            }).then(typedData => `data:${typedData.mimetype};base64,${Buffer.from(typedData.data).toString('base64')}`);
         };
         // tslint:disable-next-line: no-conditional-assignment
         if (this.mode = mode) {
