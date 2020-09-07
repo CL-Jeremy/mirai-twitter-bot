@@ -369,7 +369,7 @@ extends CallableInstance<
                 .sort((var1, var2) => var2.bitrate - var1.bitrate)
                 .map(variant => variant.url)[0]; // largest video
             }
-            const altMessage = Message.Plain(`[失败的${typeInZH[media.type].type}：${url}]`);
+            const altMessage = Message.Plain(`\n[失败的${typeInZH[media.type].type}：${url}]`);
             return this.fetchMedia(url)
               .then(base64url =>
                 uploader(Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
@@ -390,9 +390,9 @@ extends CallableInstance<
           promise = promise.then(() => {
             const urls = originTwi.entities.urls
               .filter(urlObj => urlObj.indices[0] < originTwi.display_text_range[1])
-              .map(urlObj => `\ud83d\udd17 ${urlObj.expanded_url}`);
+              .map(urlObj => `\n\ud83d\udd17 ${urlObj.expanded_url}`);
             if (urls.length) {
-              messageChain.push(Message.Plain(urls.join('\n')));
+              messageChain.push(Message.Plain(urls.join('')));
             }
           });
         }
@@ -401,7 +401,7 @@ extends CallableInstance<
       if (originTwi.is_quote_status) {
         promise = promise.then(() => {
           messageChain.push(
-            Message.Plain(`回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_permalink.expanded}`)
+            Message.Plain(`\n回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_permalink.expanded}`)
           );
         });
       }
