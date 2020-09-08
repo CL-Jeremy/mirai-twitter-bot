@@ -156,7 +156,10 @@ extends CallableInstance<
                 let boundary = null;
                 let x = zoomFactor * 2;
                 for (let y = 0; y < this.height; y++) {
-                  if (this.data[idx(x, y)] !== 255) {
+                  if (
+                    this.data[idx(x, y)] !== 255 &&
+                    this.data[idx(x, y)] === this.data[idx(x + zoomFactor * 10, y)]
+                  ) {
                     if (this.data[idx(x, y + 18 * zoomFactor)] !== 255) {
                       // footer kicks in
                       boundary = null;
