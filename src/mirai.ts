@@ -20,12 +20,6 @@ interface IQQProps {
   unsub(chat: IChat, args: string[], replyfn: (msg: string) => any): void;
 }
 
-const ChatTypeMap: Record<MessageType.ChatMessageType, ChatType> = {
-  GroupMessage: ChatType.Group,
-  FriendMessage: ChatType.Private,
-  TempMessage: ChatType.Temp,
-};
-
 export type MessageChain = MessageType.MessageChain;
 export const Message = MiraiMessage;
 
@@ -34,6 +28,41 @@ export default class {
   private botInfo: IQQProps;
   public bot: Mirai;
 
+  private getChat = async (msg: MessageType.ChatMessage): Promise<IChat> => {
+    switch (msg.type) {
+      case 'FriendMessage':
+        return {
+          chatID: msg.sender.id,
+          chatType: ChatType.Private,
+        };
+      case 'GroupMessage':
+        return {
+          chatID: msg.sender.group.id,
+          chatType: ChatType.Group,
+        };
+      case 'TempMessage':
+        const friendList: [{
+          id: number,
+          nickname: string,
+          remark: string,
+        }] = await this.bot.api.friendList();
+        // already befriended
+        if (friendList.some(friendItem => friendItem.id = msg.sender.id)) {
+          return {
+            chatID: msg.sender.id,
+            chatType: ChatType.Private,
+          };
+        }
+        return {
+          chatID: {
+            qq: msg.sender.id,
+            group: msg.sender.group.id,
+          },
+          chatType: ChatType.Temp,
+        };
+    }
+  }
+
   public sendTo = (subscriber: IChat, msg: string | MessageChain) =>
     (() => {
       switch (subscriber.chatType) {
@@ -41,14 +70,17 @@ export default class {
           return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
         case 'private':
           return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+        // currently disabled
+        case 'temp':
+          return this.bot.api.sendTempMessage(msg, subscriber.chatID.qq, subscriber.chatID.group);
       }
     })()
     .then(response => {
-      logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
+      logger.info(`pushing data to ${JSON.stringify(subscriber.chatID)} was successful, response:`);
       logger.info(response);
     })
     .catch(reason => {
-      logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
+      logger.error(`error pushing data to ${JSON.stringify(subscriber.chatID)}, reason: ${reason}`);
       throw Error(reason);
     })
 
@@ -108,16 +140,42 @@ export default class {
 
     this.bot.axios.defaults.maxContentLength = Infinity;
 
-    this.bot.on('message', (msg) => {
-      const chat: IChat = {
-        chatType: ChatTypeMap[msg.type],
-        chatID: 0,
-      };
-      if (msg.type === 'FriendMessage') {
-          chat.chatID = msg.sender.id;
-      } else if (msg.type === 'GroupMessage') {
-          chat.chatID = msg.sender.group.id;
-      }
+    this.bot.on('NewFriendRequestEvent', evt => {
+      logger.debug(`detected new friend request event: ${JSON.stringify(evt)}`);
+      this.bot.api.groupList()
+      .then((groupList: [{
+        id: number,
+        name: string,
+        permission: 'OWNER' | 'ADMINISTRATOR' | 'MEMBER',
+      }]) => {
+        if (groupList.some(groupItem => groupItem.id === evt.groupId)) {
+          evt.respond('allow');
+          return logger.info(`accepted friend request from ${evt.fromId} (from group ${evt.groupId})`);
+        }
+        logger.warn(`received friend request from ${evt.fromId} (from group ${evt.groupId})`);
+        logger.warn('please manually accept this friend request');
+      });
+    });
+
+    this.bot.on('BotInvitedJoinGroupRequestEvent', evt => {
+      logger.debug(`detected group invitation event: ${JSON.stringify(evt)}`);
+      this.bot.api.friendList()
+      .then((friendList: [{
+        id: number,
+        nickname: string,
+        remark: string,
+      }]) => {
+        if (friendList.some(friendItem => friendItem.id = evt.fromId)) {
+          evt.respond('allow');
+          return logger.info(`accepted group invitation from ${evt.fromId} (friend)`);
+        }
+        logger.warn(`received group invitation from ${evt.fromId} (unknown)`);
+        logger.warn('please manually accept this group invitation');
+      });
+    });
+
+    this.bot.on('message', async msg => {
+      const chat = await this.getChat(msg);
       const cmdObj = command(msg.plain);
       switch (cmdObj.cmd) {
         case 'twitter_view':
@@ -141,7 +199,10 @@ export default class {
 /twitter - 查询当前聊天中的订阅
 /twitter_subscribe [链接] - 订阅 Twitter 搬运
 /twitter_unsubscribe [链接] - 退订 Twitter 搬运
-/twitter_view [链接] - 查看推文`);
+/twitter_view [链接] - 查看推文
+${chat.chatType === ChatType.Temp &&
+  '（当前游客模式下无法使用订阅功能，请先添加本账号为好友。）'
+}`);
       }
     });
 }
@@ -167,7 +228,7 @@ export default class {
 
   private login = async (logMsg?: string) => {
     logger.warn(logMsg ?? 'Logging in...');
-    await this.bot.login(this.botInfo.bot_id)
+    await this.bot.link(this.botInfo.bot_id)
     .then(() => logger.warn(`Logged in as ${this.botInfo.bot_id}`))
     .catch(() => {
       logger.error(`Cannot log in. Do you have a bot logged in as ${this.botInfo.bot_id}?`);
