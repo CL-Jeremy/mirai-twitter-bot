@@ -38,6 +38,9 @@ function linkFinder(checkedMatch, chat, lock) {
     return [link, index];
 }
 function sub(chat, args, reply, lock, lockfile) {
+    if (chat.chatType === "temp" /* Temp */) {
+        return reply('请先添加机器人为好友。');
+    }
     if (args.length === 0) {
         return reply('找不到要订阅的链接。');
     }
@@ -94,6 +97,9 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
 }
 exports.sub = sub;
 function unsub(chat, args, reply, lock, lockfile) {
+    if (chat.chatType === "temp" /* Temp */) {
+        return reply('请先添加机器人为好友。');
+    }
     if (args.length === 0) {
         return reply('找不到要退订的链接。');
     }
@@ -113,6 +119,9 @@ function unsub(chat, args, reply, lock, lockfile) {
 }
 exports.unsub = unsub;
 function list(chat, _, reply, lock) {
+    if (chat.chatType === "temp" /* Temp */) {
+        return reply('请先添加机器人为好友。');
+    }
     const links = [];
     Object.keys(lock.threads).forEach(key => {
         if (lock.threads[key].subscribers.find(({ chatID, chatType }) => chat.chatID === chatID && chat.chatType === chatType))

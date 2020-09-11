@@ -14,6 +14,7 @@
 - 视频使用 [gifski](https://github.com/ImageOptim/gifski) 压缩为 GIF（请务必下载并放到 `PATH` 下，推荐[这里](https://github.com/CL-Jeremy/gifski/releases/tag/1.0.1-unofficial)的最新修改版，注意从包管理器安装依赖）
 - 机器人的 QQ 号码必须手动填写
 - Puppeteer 不再自动启动，请手动开启并监听本地 9222 端口（这种方式可以使用 Chrome 或是远程 WebSocket 代理服务器）
+- 自动处理<u>来自群友的好友请求</u>和<u>来自好友的加群邀请</u>
 
 ## 配置
 
