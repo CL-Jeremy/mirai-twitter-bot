@@ -43,6 +43,9 @@ function linkFinder(checkedMatch: string[], chat: IChat, lock: ILock): [string, 
 function sub(chat: IChat, args: string[], reply: (msg: string) => any,
   lock: ILock, lockfile: string
 ): void {
+  if (chat.chatType === ChatType.Temp) {
+    return reply('请先添加机器人为好友。');
+  }
   if (args.length === 0) {
     return reply('找不到要订阅媒体推文的链接。');
   }
@@ -98,6 +101,9 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
 function unsub(chat: IChat, args: string[], reply: (msg: string) => any,
   lock: ILock, lockfile: string
 ): void {
+  if (chat.chatType === ChatType.Temp) {
+    return reply('请先添加机器人为好友。');
+  }
   if (args.length === 0) {
     return reply('找不到要退订媒体推文的链接。');
   }
@@ -116,6 +122,9 @@ function unsub(chat: IChat, args: string[], reply: (msg: string) => any,
 }
 
 function list(chat: IChat, _: string[], reply: (msg: string) => any, lock: ILock): void {
+  if (chat.chatType === ChatType.Temp) {
+    return reply('请先添加机器人为好友。');
+  }
   const links = [];
   Object.keys(lock.threads).forEach(key => {
     if (lock.threads[key].subscribers.find(({chatID, chatType}) => 

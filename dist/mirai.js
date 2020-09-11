@@ -19,28 +19,56 @@ const command_1 = require("./command");
 const helper_1 = require("./helper");
 const loggers_1 = require("./loggers");
 const logger = loggers_1.getLogger('qqbot');
-const ChatTypeMap = {
-    GroupMessage: "group" /* Group */,
-    FriendMessage: "private" /* Private */,
-    TempMessage: "temp" /* Temp */,
-};
 exports.Message = message_1.default;
 class default_1 {
     constructor(opt) {
+        this.getChat = (msg) => __awaiter(this, void 0, void 0, function* () {
+            switch (msg.type) {
+                case 'FriendMessage':
+                    return {
+                        chatID: msg.sender.id,
+                        chatType: "private" /* Private */,
+                    };
+                case 'GroupMessage':
+                    return {
+                        chatID: msg.sender.group.id,
+                        chatType: "group" /* Group */,
+                    };
+                case 'TempMessage':
+                    const friendList = yield this.bot.api.friendList();
+                    // already befriended
+                    if (friendList.some(friendItem => friendItem.id = msg.sender.id)) {
+                        return {
+                            chatID: msg.sender.id,
+                            chatType: "private" /* Private */,
+                        };
+                    }
+                    return {
+                        chatID: {
+                            qq: msg.sender.id,
+                            group: msg.sender.group.id,
+                        },
+                        chatType: "temp" /* Temp */,
+                    };
+            }
+        });
         this.sendTo = (subscriber, msg) => (() => {
             switch (subscriber.chatType) {
                 case 'group':
                     return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
                 case 'private':
                     return this.bot.api.sendFriendMessage(msg, subscriber.chatID);
+                // currently disabled
+                case 'temp':
+                    return this.bot.api.sendTempMessage(msg, subscriber.chatID.qq, subscriber.chatID.group);
             }
         })()
             .then(response => {
-            logger.info(`pushing data to ${subscriber.chatID} was successful, response:`);
+            logger.info(`pushing data to ${JSON.stringify(subscriber.chatID)} was successful, response:`);
             logger.info(response);
         })
             .catch(reason => {
-            logger.error(`error pushing data to ${subscriber.chatID}, reason: ${reason}`);
+            logger.error(`error pushing data to ${JSON.stringify(subscriber.chatID)}, reason: ${reason}`);
             throw Error(reason);
         });
         this.uploadPic = (img, timeout = -1) => {
@@ -98,17 +126,32 @@ class default_1 {
                 port: this.botInfo.port,
             });
             this.bot.axios.defaults.maxContentLength = Infinity;
-            this.bot.on('message', (msg) => {
-                const chat = {
-                    chatType: ChatTypeMap[msg.type],
-                    chatID: 0,
-                };
-                if (msg.type === 'FriendMessage') {
-                    chat.chatID = msg.sender.id;
-                }
-                else if (msg.type === 'GroupMessage') {
-                    chat.chatID = msg.sender.group.id;
-                }
+            this.bot.on('NewFriendRequestEvent', evt => {
+                logger.debug(`detected new friend request event: ${JSON.stringify(evt)}`);
+                this.bot.api.groupList()
+                    .then((groupList) => {
+                    if (groupList.some(groupItem => groupItem.id === evt.groupId)) {
+                        evt.respond('allow');
+                        return logger.info(`accepted friend request from ${evt.fromId} (from group ${evt.groupId})`);
+                    }
+                    logger.warn(`received friend request from ${evt.fromId} (from group ${evt.groupId})`);
+                    logger.warn('please manually accept this friend request');
+                });
+            });
+            this.bot.on('BotInvitedJoinGroupRequestEvent', evt => {
+                logger.debug(`detected group invitation event: ${JSON.stringify(evt)}`);
+                this.bot.api.friendList()
+                    .then((friendList) => {
+                    if (friendList.some(friendItem => friendItem.id = evt.fromId)) {
+                        evt.respond('allow');
+                        return logger.info(`accepted group invitation from ${evt.fromId} (friend)`);
+                    }
+                    logger.warn(`received group invitation from ${evt.fromId} (unknown)`);
+                    logger.warn('please manually accept this group invitation');
+                });
+            });
+            this.bot.on('message', (msg) => __awaiter(this, void 0, void 0, function* () {
+                const chat = yield this.getChat(msg);
                 const cmdObj = helper_1.default(msg.plain);
                 switch (cmdObj.cmd) {
                     case 'twitterpic_view':
@@ -132,9 +175,11 @@ class default_1 {
 /twitterpic - 查询当前聊天中的媒体推文订阅
 /twitterpic_subscribe [链接] - 订阅 Twitter 媒体推文搬运
 /twitterpic_unsubscribe [链接] - 退订 Twitter 媒体推文搬运
-/twitterpic_view [链接] - 查看推文（无关是否包含媒体）`);
+/twitterpic_view [链接] - 查看推文（无关是否包含媒体）
+${chat.chatType === "temp" /* Temp */ &&
+                            '（当前游客模式下无法使用订阅功能，请先添加本账号为好友。）'}`);
                 }
-            });
+            }));
         };
         // TODO doesn't work if connection is dropped after connection
         this.listen = (logMsg) => {
@@ -156,7 +201,7 @@ class default_1 {
         };
         this.login = (logMsg) => __awaiter(this, void 0, void 0, function* () {
             logger.warn(logMsg !== null && logMsg !== void 0 ? logMsg : 'Logging in...');
-            yield this.bot.login(this.botInfo.bot_id)
+            yield this.bot.link(this.botInfo.bot_id)
                 .then(() => logger.warn(`Logged in as ${this.botInfo.bot_id}`))
                 .catch(() => {
                 logger.error(`Cannot log in. Do you have a bot logged in as ${this.botInfo.bot_id}?`);

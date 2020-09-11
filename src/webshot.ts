@@ -262,6 +262,7 @@ extends CallableInstance<
         method: 'get',
         url,
         responseType: 'arraybuffer',
+        timeout: 150000,
       }).then(res => {
         if (res.status === 200) {
             logger.info(`successfully fetched ${url}`);
