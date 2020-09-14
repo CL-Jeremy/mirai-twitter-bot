@@ -3,9 +3,33 @@ import * as path from 'path';
 
 import { relativeDate } from './datetime';
 import { getLogger } from './loggers';
-import { bigNumPlus, sendTweet, ScreenNameNormalizer as normalizer } from './twitter';
+import { sendTimeline, sendTweet, ScreenNameNormalizer as normalizer } from './twitter';
+import { BigNumOps } from './utils';
 
 const logger = getLogger('command');
+
+function parseCmd(message: string): {
+  cmd: string;
+  args: string[];
+} {
+  message = message.trim();
+  message = message.replace('\\\\', '\\0x5c');
+  message = message.replace('\\\"', '\\0x22');
+  message = message.replace('\\\'', '\\0x27');
+  const strs = message.match(/'[\s\S]*?'|(?:\S+=)?"[\s\S]*?"|\S+/mg);
+  const cmd = strs?.length ? strs[0].length ? strs[0].substring(0, 1) === '/' ? strs[0].substring(1) : '' : '' : '';
+  const args = (strs ?? []).slice(1).map(arg => {
+    arg = arg.replace(/^(\S+=)?["']+(?!.*=)|["']+$/g, '$1');
+    arg = arg.replace('\\0x27', '\\\'');
+    arg = arg.replace('\\0x22', '\\\"');
+    arg = arg.replace('\\0x5c', '\\\\');
+    return arg;
+  });
+  return {
+    cmd,
+    args,
+  };
+}
 
 function parseLink(link: string): string[] {
   let match =
@@ -61,7 +85,7 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
   if (match[1]) {
     const matchStatus = match[1].match(/\/status\/(\d+)/);
     if (matchStatus) {
-      offset = bigNumPlus(matchStatus[1], '-1');
+      offset = BigNumOps.plus(matchStatus[1], '-1');
       delete match[1];
     }
   }
@@ -149,4 +173,48 @@ function view(chat: IChat, args: string[], reply: (msg: string) => any): void {
   }
 }
 
-export { sub, list, unsub, view };
+function query(chat: IChat, args: string[], reply: (msg: string) => any): void {
+  if (args.length === 0) {
+    return reply('找不到要查询的用户。');
+  }
+  const match = 
+    args[0].match(/twitter.com\/([^\/?#]+)/) ||
+    args[0].match(/^([^\/?#]+)$/);
+  if (!match) {
+    return reply('链接格式有误。');
+  }
+  const conf: {
+    username: string,
+    count?: string,
+    since?: string,
+    until?: string,
+    noreps: string,
+    norts: string,
+  } = {username: match[1], noreps: 'on', norts: 'off'};
+  const confZH: Record<Exclude<keyof typeof conf, 'username'>, string> = {
+    count: '数量上限',
+    since: '起始点',
+    until: '结束点',
+    noreps: '忽略回复推文（on/off）',
+    norts: '忽略原生转推（on/off）',
+  };
+  for (const arg of args.slice(1)) {
+    const optMatch = arg.match(/^(count|since|until|noreps|norts)=(.*)/);
+    if (!optMatch) return reply(`未定义的查询参数：${arg}。`);
+    const optKey = optMatch[1] as keyof typeof confZH;
+    if (optMatch.length === 1) return reply(`查询${confZH[optKey]}参数格式有误。`);
+    conf[optKey] = optMatch[2];
+    if (optMatch[2] === '') return reply(`查询${confZH[optKey]}参数值不可为空。`);
+  }
+  if (conf.count !== undefined && !Number(conf.count) || Math.abs(Number(conf.count)) > 50) {
+    return reply('查询数量上限参数为零、非数值或超出取值范围。');
+  }
+  try {
+    sendTimeline(conf, chat);
+  } catch (e) {
+    logger.error(`error querying timeline, error: ${e}`);
+    reply('推特机器人尚未加载完毕，请稍后重试。');
+  }
+}
+
+export { parseCmd, sub, list, unsub, view, query };
