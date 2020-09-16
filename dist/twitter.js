@@ -108,9 +108,11 @@ class default_1 {
                 include_rts: !(norts !== null && norts !== void 0 ? norts : false),
                 since_id: since,
                 max_id: until,
+                tweet_mode: 'extended',
             }, tweets = []) => this.client.get('statuses/user_timeline', config)
                 .then((newTweets) => {
                 if (newTweets.length) {
+                    logger.debug(`fetched tweets: ${JSON.stringify(newTweets)}`);
                     config.max_id = utils_1.BigNumOps.plus('-1', newTweets[newTweets.length - 1].id_str);
                     logger.info(`timeline query of ${username} yielded ${newTweets.length} new tweets, next query will start at offset ${config.max_id}`);
                     tweets.push(...newTweets.filter(tweet => tweet.extended_entities));
@@ -329,14 +331,15 @@ class default_1 {
 编号：${tweet.id_str}
 时间：${tweet.created_at}
 媒体：${tweet.extended_entities ? '有' : '无'}
-正文：\n${tweet.text}`))
+正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+( https:\/\/t.co\/.*)$/, '$1…$2')}`))
                 .concat(this.bot.sendTo(receiver, tweets.length ?
                 '时间线查询完毕，使用 /twitterpic_view <编号> 查看媒体推文详细内容。' :
                 '时间线查询完毕，没有找到符合条件的媒体推文。'))))
                 .catch((err) => {
-                if (err[0].code !== 34) {
-                    logger.warn(`error retrieving timeline: ${err[0].message}`);
-                    return this.bot.sendTo(receiver, `获取时间线时出现错误：${err[0].message}`);
+                var _a, _b, _c;
+                if (((_a = err[0]) === null || _a === void 0 ? void 0 : _a.code) !== 34) {
+                    logger.warn(`error retrieving timeline: ${((_b = err[0]) === null || _b === void 0 ? void 0 : _b.message) || err}`);
+                    return this.bot.sendTo(receiver, `获取时间线时出现错误：${((_c = err[0]) === null || _c === void 0 ? void 0 : _c.message) || err}`);
                 }
                 this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
             });

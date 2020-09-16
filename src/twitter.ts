@@ -108,11 +108,6 @@ interface ITweet extends TwitterTypes.Status {
   retweeted_status?: Tweet;
 }
 
-interface IFoldedTweet extends TwitterTypes.Status {
-  text: string;
-  full_text: undefined;
-}
-
 export type Tweet = ITweet;
 export type Tweets = ITweet[];
 
@@ -166,7 +161,7 @@ export default class {
 编号：${tweet.id_str}
 时间：${tweet.created_at}
 媒体：${tweet.extended_entities ? '有' : '无'}
-正文：\n${tweet.text}`
+正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+( https:\/\/t.co\/.*)$/, '$1…$2')}`
         ))
         .concat(this.bot.sendTo(receiver, tweets.length ?
           '时间线查询完毕，使用 /twitterpic_view <编号> 查看媒体推文详细内容。' :
@@ -174,9 +169,9 @@ export default class {
         ))
       ))
       .catch((err: {code: number, message: string}[]) => {
-        if (err[0].code !== 34) {
-          logger.warn(`error retrieving timeline: ${err[0].message}`);
-          return this.bot.sendTo(receiver, `获取时间线时出现错误：${err[0].message}`);
+        if (err[0]?.code !== 34) {
+          logger.warn(`error retrieving timeline: ${err[0]?.message || err}`);
+          return this.bot.sendTo(receiver, `获取时间线时出现错误：${err[0]?.message || err}`);
         }
         this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
       });
@@ -202,7 +197,7 @@ export default class {
     const until = () =>
       BigNumOps.min(maxID, BigNumOps.plus(conf.since, String(7 * 24 * 3600 * 1000 * 2 ** 22)));
     conf.until = until();
-    const promise = (tweets: IFoldedTweet[]): Promise<IFoldedTweet[]> =>
+    const promise = (tweets: ITweet[]): Promise<ITweet[]> =>
       this.queryTimeline(conf).then(newTweets => {
         tweets = newTweets.concat(tweets);
         conf.since = conf.until;
@@ -238,12 +233,14 @@ export default class {
         include_rts: !(norts ?? false),
         since_id: since,
         max_id: until,
+        tweet_mode: 'extended',
       },
-      tweets: IFoldedTweet[] = []
-    ): Promise<IFoldedTweet[]> =>
+      tweets: ITweet[] = []
+    ): Promise<ITweet[]> =>
       this.client.get('statuses/user_timeline', config)
-        .then((newTweets: IFoldedTweet[]) => {
+        .then((newTweets: ITweet[]) => {
           if (newTweets.length) {
+            logger.debug(`fetched tweets: ${JSON.stringify(newTweets)}`);
             config.max_id = BigNumOps.plus('-1', newTweets[newTweets.length - 1].id_str);
             logger.info(`timeline query of ${username} yielded ${
               newTweets.length
