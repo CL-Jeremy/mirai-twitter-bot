@@ -9,11 +9,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendTweet = exports.ScreenNameNormalizer = void 0;
+exports.sendTimeline = exports.sendTweet = exports.ScreenNameNormalizer = void 0;
 const fs = require("fs");
 const path = require("path");
 const Twitter = require("twitter");
 const loggers_1 = require("./loggers");
+const utils_1 = require("./utils");
 const webshot_1 = require("./webshot");
 class ScreenNameNormalizer {
     static normalizeLive(username) {
@@ -37,12 +38,18 @@ ScreenNameNormalizer.normalize = (username) => username.toLowerCase().replace(/^
 exports.sendTweet = (id, receiver) => {
     throw Error();
 };
+exports.sendTimeline = (conf, receiver) => {
+    throw Error();
+};
+const TWITTER_EPOCH = 1288834974657;
+const snowflake = (epoch) => Number.isNaN(epoch) ? undefined :
+    utils_1.BigNumOps.lShift(String(epoch - 1 - TWITTER_EPOCH), 22);
 const logger = loggers_1.getLogger('twitter');
 const maxTrials = 3;
 const uploadTimeout = 10000;
 const retryInterval = 1500;
 const ordinal = (n) => {
-    switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
+    switch ((Math.trunc(n / 10) % 10 === 1) ? 0 : n % 10) {
         case 1:
             return `${n}st`;
         case 2:
@@ -71,6 +78,53 @@ class default_1 {
         };
         this.queryUser = (username) => this.client.get('users/show', { screen_name: username })
             .then((user) => user.screen_name);
+        this.queryTimelineReverse = (conf) => {
+            if (!conf.since)
+                return this.queryTimeline(conf);
+            const count = conf.count;
+            const maxID = conf.until;
+            conf.count = undefined;
+            const until = () => utils_1.BigNumOps.min(maxID, utils_1.BigNumOps.plus(conf.since, String(7 * 24 * 3600 * 1000 * Math.pow(2, 22))));
+            conf.until = until();
+            const promise = (tweets) => this.queryTimeline(conf).then(newTweets => {
+                tweets = newTweets.concat(tweets);
+                conf.since = conf.until;
+                conf.until = until();
+                if (tweets.length >= count ||
+                    utils_1.BigNumOps.compare(conf.since, conf.until) >= 0) {
+                    return tweets.slice(-count);
+                }
+                return promise(tweets);
+            });
+            return promise([]);
+        };
+        this.queryTimeline = ({ username, count, since, until, noreps, norts }) => {
+            username = username.replace(/^@?(.*)$/, '@$1');
+            logger.info(`querying timeline of ${username} with config: ${JSON.stringify(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (count && { count })), (since && { since })), (until && { until })), (noreps && { noreps })), (norts && { norts })))}`);
+            const fetchTimeline = (config = {
+                screen_name: username.slice(1),
+                trim_user: true,
+                exclude_replies: noreps !== null && noreps !== void 0 ? noreps : true,
+                include_rts: !(norts !== null && norts !== void 0 ? norts : false),
+                since_id: since,
+                max_id: until,
+                tweet_mode: 'extended',
+            }, tweets = []) => this.client.get('statuses/user_timeline', config)
+                .then((newTweets) => {
+                if (newTweets.length) {
+                    logger.debug(`fetched tweets: ${JSON.stringify(newTweets)}`);
+                    config.max_id = utils_1.BigNumOps.plus('-1', newTweets[newTweets.length - 1].id_str);
+                    logger.info(`timeline query of ${username} yielded ${newTweets.length} new tweets, next query will start at offset ${config.max_id}`);
+                    tweets.push(...newTweets);
+                }
+                if (!newTweets.length || tweets.length >= count) {
+                    logger.info(`timeline query of ${username} finished successfully, ${tweets.length} tweets have been fetched`);
+                    return tweets.slice(0, count);
+                }
+                return fetchTimeline(config, tweets);
+            });
+            return fetchTimeline();
+        };
         this.workOnTweets = (tweets, sendTweets) => {
             const uploader = (message, lastResort) => {
                 let timeout = uploadTimeout;
@@ -94,7 +148,10 @@ class default_1 {
                 tweet_mode: 'extended',
             };
             return this.client.get(endpoint, config)
-                .then((tweet) => this.workOnTweets([tweet], sender));
+                .then((tweet) => {
+                logger.debug(`api returned tweet ${JSON.stringify(tweet)} for query id=${id}`);
+                return this.workOnTweets([tweet], sender);
+            });
         };
         this.sendTweets = (source, ...to) => (msg, text, author) => {
             to.forEach(subscriber => {
@@ -240,6 +297,33 @@ class default_1 {
                     this.bot.sendTo(receiver, `获取推文时出现错误：${err[0].message}`);
                 }
                 this.bot.sendTo(receiver, '找不到请求的推文，它可能已被删除。');
+            });
+        };
+        exports.sendTimeline = ({ username, count, since, until, noreps, norts }, receiver) => {
+            const countNum = Number(count) || 10;
+            (countNum > 0 ? this.queryTimeline : this.queryTimelineReverse)({
+                username,
+                count: Math.abs(countNum),
+                since: utils_1.BigNumOps.parse(since) || snowflake(new Date(since).getTime()),
+                until: utils_1.BigNumOps.parse(until) || snowflake(new Date(until).getTime()),
+                noreps: { on: true, off: false }[noreps],
+                norts: { on: true, off: false }[norts],
+            })
+                .then(tweets => utils_1.chainPromises(tweets.map(tweet => this.bot.sendTo(receiver, `\
+编号：${tweet.id_str}
+时间：${tweet.created_at}
+媒体：${tweet.extended_entities ? '有' : '无'}
+正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+( https:\/\/t.co\/.*)$/, '$1…$2')}`))
+                .concat(this.bot.sendTo(receiver, tweets.length ?
+                '时间线查询完毕，使用 /twitter_view <编号> 查看推文详细内容。' :
+                '时间线查询完毕，没有找到符合条件的推文。'))))
+                .catch((err) => {
+                var _a, _b, _c;
+                if (((_a = err[0]) === null || _a === void 0 ? void 0 : _a.code) !== 34) {
+                    logger.warn(`error retrieving timeline: ${((_b = err[0]) === null || _b === void 0 ? void 0 : _b.message) || err}`);
+                    return this.bot.sendTo(receiver, `获取时间线时出现错误：${((_c = err[0]) === null || _c === void 0 ? void 0 : _c.message) || err}`);
+                }
+                this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
             });
         };
     }

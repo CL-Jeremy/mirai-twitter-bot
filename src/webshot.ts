@@ -12,11 +12,9 @@ import gifski from './gifski';
 import { getLogger } from './loggers';
 import { Message, MessageChain } from './mirai';
 import { MediaEntity, Tweets } from './twitter';
+import { chainPromises } from './utils';
 
 const xmlEntities = new XmlEntities();
-
-const chainPromises = <T>(promises: Promise<T>[]) =>
-  promises.reduce((p1, p2) => p1.then(() => p2), Promise.resolve());
 
 const ZHType = (type: string) => new class extends String {
   public type = super.toString();

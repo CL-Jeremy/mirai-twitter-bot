@@ -5,6 +5,7 @@ import TwitterTypes from 'twitter-d';
 
 import { getLogger } from './loggers';
 import QQBot, { Message, MessageChain } from './mirai';
+import { chainPromises, BigNumOps } from './utils';
 import Webshot from './webshot';
 
 interface IWorkerOption {
@@ -46,12 +47,33 @@ export let sendTweet = (id: string, receiver: IChat): void => {
   throw Error();
 };
 
+export interface ITimelineQueryConfig {
+  username: string;
+  count?: number;
+  since?: string;
+  until?: string;
+  noreps?: boolean;
+  norts?: boolean;
+}
+
+export let sendTimeline = (
+  conf: {[key in keyof ITimelineQueryConfig]: string},
+  receiver: IChat
+): void => {
+  throw Error();
+};
+
+const TWITTER_EPOCH = 1288834974657;
+const snowflake = (epoch: number) =>
+  Number.isNaN(epoch) ? undefined :
+    BigNumOps.lShift(String(epoch - 1 - TWITTER_EPOCH), 22);
+
 const logger = getLogger('twitter');
 const maxTrials = 3;
 const uploadTimeout = 10000;
 const retryInterval = 1500;
 const ordinal = (n: number) => {
-  switch ((~~(n / 10) % 10 === 1) ? 0 : n % 10) {
+  switch ((Math.trunc(n / 10) % 10 === 1) ? 0 : n % 10) {
     case 1:
       return `${n}st`;
     case 2:
@@ -124,6 +146,36 @@ export default class {
         this.bot.sendTo(receiver, '找不到请求的推文，它可能已被删除。');
       });
     };
+    sendTimeline = ({username, count, since, until, noreps, norts}, receiver) => {
+      const countNum = Number(count) || 10;
+      (countNum > 0 ? this.queryTimeline : this.queryTimelineReverse)({
+        username,
+        count: Math.abs(countNum),
+        since: BigNumOps.parse(since) || snowflake(new Date(since).getTime()),
+        until: BigNumOps.parse(until) || snowflake(new Date(until).getTime()),
+        noreps: {on: true, off: false}[noreps],
+        norts: {on: true, off: false}[norts],
+      })
+      .then(tweets => chainPromises(
+        tweets.map(tweet => this.bot.sendTo(receiver, `\
+编号：${tweet.id_str}
+时间：${tweet.created_at}
+媒体：${tweet.extended_entities ? '有' : '无'}
+正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+( https:\/\/t.co\/.*)$/, '$1…$2')}`
+        ))
+        .concat(this.bot.sendTo(receiver, tweets.length ?
+          '时间线查询完毕，使用 /twitter_view <编号> 查看推文详细内容。' :
+            '时间线查询完毕，没有找到符合条件的推文。'
+        ))
+      ))
+      .catch((err: {code: number, message: string}[]) => {
+        if (err[0]?.code !== 34) {
+          logger.warn(`error retrieving timeline: ${err[0]?.message || err}`);
+          return this.bot.sendTo(receiver, `获取时间线时出现错误：${err[0]?.message || err}`);
+        }
+        this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
+      });
+    };
   }
 
   public launch = () => {
@@ -136,6 +188,75 @@ export default class {
   public queryUser = (username: string) =>
     this.client.get('users/show', {screen_name: username})
     .then((user: FullUser) => user.screen_name)
+
+  public queryTimelineReverse = (conf: ITimelineQueryConfig) => {
+    if (!conf.since) return this.queryTimeline(conf);
+    const count = conf.count;
+    const maxID = conf.until;
+    conf.count = undefined;
+    const until = () =>
+      BigNumOps.min(maxID, BigNumOps.plus(conf.since, String(7 * 24 * 3600 * 1000 * 2 ** 22)));
+    conf.until = until();
+    const promise = (tweets: ITweet[]): Promise<ITweet[]> =>
+      this.queryTimeline(conf).then(newTweets => {
+        tweets = newTweets.concat(tweets);
+        conf.since = conf.until;
+        conf.until = until();
+        if (
+          tweets.length >= count ||
+          BigNumOps.compare(conf.since, conf.until) >= 0
+        ) {
+          return tweets.slice(-count);
+        }
+        return promise(tweets);
+      });
+    return promise([]);
+  }
+
+  public queryTimeline = (
+    { username, count, since, until, noreps, norts }: ITimelineQueryConfig
+  ) => {
+    username = username.replace(/^@?(.*)$/, '@$1');
+    logger.info(`querying timeline of ${username} with config: ${
+      JSON.stringify({
+        ...(count && {count}),
+        ...(since && {since}),
+        ...(until && {until}),
+        ...(noreps && {noreps}),
+        ...(norts && {norts}),
+    })}`);
+    const fetchTimeline = (
+      config = {
+        screen_name: username.slice(1),
+        trim_user: true,
+        exclude_replies: noreps ?? true,
+        include_rts: !(norts ?? false),
+        since_id: since,
+        max_id: until,
+        tweet_mode: 'extended',
+      },
+      tweets: ITweet[] = []
+    ): Promise<ITweet[]> =>
+      this.client.get('statuses/user_timeline', config)
+        .then((newTweets: ITweet[]) => {
+          if (newTweets.length) {
+            logger.debug(`fetched tweets: ${JSON.stringify(newTweets)}`);
+            config.max_id = BigNumOps.plus('-1', newTweets[newTweets.length - 1].id_str);
+            logger.info(`timeline query of ${username} yielded ${
+              newTweets.length
+            } new tweets, next query will start at offset ${config.max_id}`);
+            tweets.push(...newTweets);
+          }
+          if (!newTweets.length || tweets.length >= count) {
+            logger.info(`timeline query of ${username} finished successfully, ${
+              tweets.length
+            } tweets have been fetched`);
+            return tweets.slice(0, count);
+          }
+          return fetchTimeline(config, tweets);
+        });
+    return fetchTimeline();
+  }
 
   private workOnTweets = (
     tweets: Tweets,
@@ -168,7 +289,10 @@ export default class {
       tweet_mode: 'extended',
     };
     return this.client.get(endpoint, config)
-    .then((tweet: Tweet) => this.workOnTweets([tweet], sender));
+    .then((tweet: Tweet) => {
+      logger.debug(`api returned tweet ${JSON.stringify(tweet)} for query id=${id}`);
+      return this.workOnTweets([tweet], sender);
+    });
   }
 
   private sendTweets = (source?: string, ...to: IChat[]) =>

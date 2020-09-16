@@ -19,8 +19,8 @@ const util_1 = require("util");
 const gifski_1 = require("./gifski");
 const loggers_1 = require("./loggers");
 const mirai_1 = require("./mirai");
+const utils_1 = require("./utils");
 const xmlEntities = new html_entities_1.XmlEntities();
-const chainPromises = (promises) => promises.reduce((p1, p2) => p1.then(() => p2), Promise.resolve());
 const ZHType = (type) => new class extends String {
     constructor() {
         super(...arguments);
@@ -347,7 +347,7 @@ class Webshot extends CallableInstance {
             if (1 - this.mode % 2)
                 promise = promise.then(() => {
                     if (originTwi.extended_entities) {
-                        return chainPromises(originTwi.extended_entities.media.map(media => {
+                        return utils_1.chainPromises(originTwi.extended_entities.media.map(media => {
                             let url;
                             if (media.type === 'photo') {
                                 url = media.media_url_https.replace(/\.([a-z]+)$/, '?format=$1') + '&name=orig';
