@@ -313,7 +313,7 @@ class default_1 {
 编号：${tweet.id_str}
 时间：${tweet.created_at}
 媒体：${tweet.extended_entities ? '有' : '无'}
-正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+( https:\/\/t.co\/.*)$/, '$1…$2')}`))
+正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+?( https:\/\/t.co\/.*)?$/, '$1…$2')}`))
                 .concat(this.bot.sendTo(receiver, tweets.length ?
                 '时间线查询完毕，使用 /twitter_view <编号> 查看推文详细内容。' :
                 '时间线查询完毕，没有找到符合条件的推文。'))))
