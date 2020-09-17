@@ -46,7 +46,7 @@ export default class {
           remark: string,
         }] = await this.bot.api.friendList();
         // already befriended
-        if (friendList.some(friendItem => friendItem.id = msg.sender.id)) {
+        if (friendList.some(friendItem => friendItem.id === msg.sender.id)) {
           return {
             chatID: msg.sender.id,
             chatType: ChatType.Private,
