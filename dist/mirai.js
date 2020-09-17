@@ -36,7 +36,7 @@ class default_1 {
                 case 'TempMessage':
                     const friendList = yield this.bot.api.friendList();
                     // already befriended
-                    if (friendList.some(friendItem => friendItem.id = msg.sender.id)) {
+                    if (friendList.some(friendItem => friendItem.id === msg.sender.id)) {
                         return {
                             chatID: msg.sender.id,
                             chatType: "private" /* Private */,
