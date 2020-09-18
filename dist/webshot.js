@@ -11,10 +11,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
 const CallableInstance = require("callable-instance");
+const child_process_1 = require("child_process");
+const fs_1 = require("fs");
 const html_entities_1 = require("html-entities");
 const pngjs_1 = require("pngjs");
 const puppeteer = require("puppeteer");
 const sharp = require("sharp");
+const temp = require("temp");
 const util_1 = require("util");
 const gifski_1 = require("./gifski");
 const loggers_1 = require("./loggers");
@@ -270,7 +273,7 @@ class Webshot extends CallableInstance {
                             return { mimetype: 'image/png', data };
                         case 'mp4':
                             try {
-                                return { mimetype: 'image/gif', data: yield gif(data) };
+                                return { mimetype: 'video/x-matroska', data: yield gif(data) };
                             }
                             catch (err) {
                                 logger.error(err);
@@ -360,13 +363,60 @@ class Webshot extends CallableInstance {
                             }
                             const altMessage = mirai_1.Message.Plain(`\n[失败的${typeInZH[media.type].type}：${url}]`);
                             return this.fetchMedia(url)
-                                .then(base64url => uploader(mirai_1.Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage))
-                                .catch(error => {
-                                logger.warn('unable to fetch media, sending plain text instead...');
-                                return altMessage;
+                                .then(base64url => {
+                                let mediaPromise = Promise.resolve([]);
+                                if (base64url.match(/^data:video.+;/)) {
+                                    // demux mkv into gif and pcm16le
+                                    const input = () => Buffer.from(base64url.split(',')[1], 'base64');
+                                    const imgReturns = child_process_1.spawnSync('ffmpeg', [
+                                        '-i', '-',
+                                        '-an',
+                                        '-f', 'gif',
+                                        '-c', 'copy',
+                                        '-',
+                                    ], { stdio: 'pipe', maxBuffer: 16 * 1024 * 1024, input: input() });
+                                    const voiceReturns = child_process_1.spawnSync('ffmpeg', [
+                                        '-i', '-',
+                                        '-vn',
+                                        '-f', 's16le',
+                                        '-ac', '1',
+                                        '-ar', '24000',
+                                        '-',
+                                    ], { stdio: 'pipe', maxBuffer: 16 * 1024 * 1024, input: input() });
+                                    if (!imgReturns.stdout)
+                                        throw Error(imgReturns.stderr.toString());
+                                    base64url = `data:image/gif;base64,${imgReturns.stdout.toString('base64')}`;
+                                    if (voiceReturns.stdout) {
+                                        logger.info('video has an audio track, trying to convert it to voice...');
+                                        temp.track();
+                                        const inputFile = temp.openSync();
+                                        fs_1.writeSync(inputFile.fd, voiceReturns.stdout);
+                                        child_process_1.spawnSync('silk-encoder', [
+                                            inputFile.path,
+                                            inputFile.path + '.silk',
+                                            '-tencent',
+                                        ]);
+                                        temp.cleanup();
+                                        if (fs_1.existsSync(inputFile.path + '.silk')) {
+                                            if (fs_1.statSync(inputFile.path + '.silk').size !== 0) {
+                                                const audioBase64Url = `data:audio/silk-v3;base64,${fs_1.readFileSync(inputFile.path + '.silk').toString('base64')}`;
+                                                mediaPromise = mediaPromise.then(chain => uploader(mirai_1.Message.Voice('', audioBase64Url, `${url} as amr`), () => mirai_1.Message.Plain('\n[失败的语音]'))
+                                                    .then(msg => [msg, ...chain]));
+                                            }
+                                            fs_1.unlinkSync(inputFile.path + '.silk');
+                                        }
+                                    }
+                                }
+                                return mediaPromise.then(chain => uploader(mirai_1.Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
+                                    .then(msg => [msg, ...chain]));
                             })
-                                .then(msg => {
-                                messageChain.push(msg);
+                                .catch(error => {
+                                logger.error(`unable to fetch media, error: ${error}`);
+                                logger.warn('unable to fetch media, sending plain text instead...');
+                                return [altMessage];
+                            })
+                                .then(msgs => {
+                                messageChain.push(...msgs);
                             });
                         }));
                     }
