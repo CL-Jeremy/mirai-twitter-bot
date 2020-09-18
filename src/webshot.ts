@@ -1,11 +1,14 @@
 import axios from 'axios';
 import * as CallableInstance from 'callable-instance';
+import { spawnSync } from 'child_process';
+import { existsSync, readFileSync, statSync, unlinkSync, writeSync } from 'fs';
 import { XmlEntities } from 'html-entities';
 import { PNG } from 'pngjs';
 import * as puppeteer from 'puppeteer';
 import { Browser } from 'puppeteer';
 import * as sharp from 'sharp';
 import { Readable } from 'stream';
+import * as temp from 'temp';
 import { promisify } from 'util';
 
 import gifski from './gifski';
@@ -282,7 +285,7 @@ extends CallableInstance<
             return {mimetype: 'image/png', data};
           case 'mp4':
             try {
-              return {mimetype: 'image/gif', data: await gif(data)};
+              return {mimetype: 'video/x-matroska', data: await gif(data)};
             } catch (err) {
               logger.error(err);
               throw Error(err);
@@ -300,10 +303,10 @@ extends CallableInstance<
 
   public webshot(
     tweets: Tweets,
-    uploader: (
-      img: ReturnType<typeof Message.Image>,
+    uploader: <T extends ReturnType<typeof Message.Image | typeof Message.Voice>>(
+      msg: T,
       lastResort: (...args) => ReturnType<typeof Message.Plain>)
-      => Promise<ReturnType<typeof Message.Image | typeof Message.Plain>>,
+      => Promise<T | ReturnType<typeof Message.Plain>>,
     callback: (msgs: MessageChain, text: string, author: string) => void,
     webshotDelay: number
   ): Promise<void> {
@@ -373,15 +376,68 @@ extends CallableInstance<
             }
             const altMessage = Message.Plain(`\n[失败的${typeInZH[media.type].type}：${url}]`);
             return this.fetchMedia(url)
-              .then(base64url =>
-                uploader(Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
-              )
-              .catch(error => {
-                logger.warn('unable to fetch media, sending plain text instead...');
-                return altMessage;
+              .then(base64url => {
+                let mediaPromise = Promise.resolve([] as (
+                  Parameters<typeof uploader>[0] |
+                  ReturnType<Parameters<typeof uploader>[1]>
+                )[]);
+                if (base64url.match(/^data:video.+;/)) {
+                  // demux mkv into gif and pcm16le
+                  const input = () => Buffer.from(base64url.split(',')[1], 'base64');
+                  const imgReturns = spawnSync('ffmpeg', [
+                    '-i', '-',
+                    '-an',
+                    '-f', 'gif',
+                    '-c', 'copy',
+                    '-',
+                  ], {stdio: 'pipe', maxBuffer: 16 * 1024 * 1024, input: input()});
+                  const voiceReturns = spawnSync('ffmpeg', [
+                    '-i', '-',
+                    '-vn',
+                    '-f', 's16le',
+                    '-ac', '1',
+                    '-ar', '24000',
+                    '-',
+                  ], {stdio: 'pipe', maxBuffer: 16 * 1024 * 1024, input: input()});
+                  if (!imgReturns.stdout) throw Error(imgReturns.stderr.toString());
+                  base64url = `data:image/gif;base64,${imgReturns.stdout.toString('base64')}`;
+                  if (voiceReturns.stdout) {
+                    logger.info('video has an audio track, trying to convert it to voice...');
+                    temp.track();
+                    const inputFile = temp.openSync();
+                    writeSync(inputFile.fd, voiceReturns.stdout);
+                    spawnSync('silk-encoder', [
+                      inputFile.path,
+                      inputFile.path + '.silk',
+                      '-tencent',
+                    ]);
+                    temp.cleanup();
+                    if (existsSync(inputFile.path + '.silk')) {
+                      if (statSync(inputFile.path + '.silk').size !== 0) {
+                        const audioBase64Url = `data:audio/silk-v3;base64,${
+                          readFileSync(inputFile.path + '.silk').toString('base64')
+                        }`;
+                        mediaPromise = mediaPromise.then(chain =>
+                          uploader(Message.Voice('', audioBase64Url, `${url} as amr`), () => Message.Plain('\n[失败的语音]'))
+                          .then(msg => [msg, ...chain])
+                        );
+                      }
+                      unlinkSync(inputFile.path + '.silk');
+                    }
+                  }
+                }
+                return mediaPromise.then(chain =>
+                  uploader(Message.Image('', base64url, media.type === 'photo' ? url : `${url} as gif`), () => altMessage)
+                  .then(msg => [msg, ...chain])
+                );
               })
-              .then(msg => {
-                messageChain.push(msg);
+              .catch(error => {
+                logger.error(`unable to fetch media, error: ${error}`);
+                logger.warn('unable to fetch media, sending plain text instead...');
+                return [altMessage];
+              })
+              .then(msgs => {
+                messageChain.push(...msgs);
               });
           }));
         }

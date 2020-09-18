@@ -128,7 +128,7 @@ class default_1 {
         this.workOnTweets = (tweets, sendTweets) => {
             const uploader = (message, lastResort) => {
                 let timeout = uploadTimeout;
-                return retryOnError(() => this.bot.uploadPic(message, timeout).then(() => message), (_, count, terminate) => {
+                return retryOnError(() => this.bot.upload(message, timeout).then(() => message), (_, count, terminate) => {
                     if (count <= maxTrials) {
                         timeout *= (count + 2) / (count + 1);
                         logger.warn(`retry uploading for the ${ordinal(count)} time...`);

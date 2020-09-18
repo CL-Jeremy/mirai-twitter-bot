@@ -62,8 +62,14 @@ export default class {
     }
   }
 
-  public sendTo = (subscriber: IChat, msg: string | MessageChain) =>
-    (() => {
+  public sendTo = (subscriber: IChat, msg: string | MessageChain) => {
+    const chain = [];
+    const voices = [];
+    return (() => {
+      if (typeof msg !== 'string') {
+        msg.forEach(singleMsg => (singleMsg.type === 'Voice' ? voices : chain).push(singleMsg));
+        msg = chain;
+      }
       switch (subscriber.chatType) {
         case 'group':
           return this.bot.api.sendGroupMessage(msg, subscriber.chatID);
@@ -78,31 +84,44 @@ export default class {
       logger.info(`pushing data to ${JSON.stringify(subscriber.chatID)} was successful, response:`);
       logger.info(response);
     })
+    .then(() => {
+      if (voices.length && subscriber.chatType === 'group') {
+        voices.forEach((voice, index) =>
+          this.bot.api.sendGroupMessage([voice], subscriber.chatID)
+          .then(voiceResponse => {
+            logger.info(`pushing voice #${index} to ${JSON.stringify(subscriber.chatID)} was successful, response:`);
+            logger.info(voiceResponse);
+          })
+        );
+      }
+    })
     .catch(reason => {
       logger.error(`error pushing data to ${JSON.stringify(subscriber.chatID)}, reason: ${reason}`);
       throw Error(reason);
-    })
+    });
+  }
 
-  public uploadPic = (img: MessageType.Image, timeout = -1) => {
+  public upload = <T extends MessageType.Image | MessageType.Voice>(mediaMsg: T, timeout = -1) => {
+    const idKeyName = `${mediaMsg.type.toLowerCase()}Id`;
     if (timeout) timeout = Math.floor(timeout);
     if (timeout === 0 || timeout < -1) {
       return Promise.reject('Error: timeout must be greater than 0ms');
     }
-    let imgFile: string;
-    if (img.imageId !== '') return Promise.resolve();
-    if (img.url !== '') {
-      if (img.url.split(':')[0] !== 'data') {
+    let file: string;
+    if (mediaMsg[idKeyName] !== '') return Promise.resolve();
+    if (mediaMsg.url !== '') {
+      if (mediaMsg.url.split(':')[0] !== 'data') {
         return Promise.reject('Error: URL must be of protocol "data"');
       }
-      if (img.url.split(',')[0].split(';')[1] !== 'base64') {
+      if (mediaMsg.url.split(',')[0].split(';')[1] !== 'base64') {
         return Promise.reject('Error: data URL must be of encoding "base64"');
       }
       temp.track();
       try {
         const tempFile = temp.openSync();
-        writeSync(tempFile.fd, Buffer.from(img.url.split(',')[1], 'base64'));
+        writeSync(tempFile.fd, Buffer.from(mediaMsg.url.split(',')[1], 'base64'));
         closeSync(tempFile.fd);
-        imgFile = tempFile.path;
+        file = tempFile.path;
       } catch (error) {
         logger.error(error);
       }
@@ -110,17 +129,18 @@ export default class {
     try {
       this.bot.axios.defaults.timeout = timeout === -1 ? 0 : timeout;
       logger.info(`uploading ${JSON.stringify(
-        Message.Image(img.imageId, `${img.url.split(',')[0]},[...]`, img.path)
+        Message[mediaMsg.type](mediaMsg[idKeyName], `${mediaMsg.url.split(',')[0]},[...]`, mediaMsg.path)
       )}...`);
-      return this.bot.api.uploadImage('group', imgFile || img.path)
+      return this.bot.api[`upload${mediaMsg.type}`]('group', file || mediaMsg.path)
       .then(response => { // workaround for https://github.com/mamoe/mirai/issues/194
-        logger.info(`uploading ${img.path} as group image was successful, response:`);
+        logger.info(`uploading ${mediaMsg.path} as group ${mediaMsg.type.toLowerCase()} was successful, response:`);
         logger.info(JSON.stringify(response));
-        img.url = '';
-        img.path = (response.path as string).split(/[/\\]/).slice(-1)[0];
+        if (mediaMsg.type === 'Voice') mediaMsg[idKeyName] = response[idKeyName];
+        mediaMsg.url = '';
+        mediaMsg.path = (response.path as string).split(/[/\\]/).slice(-1)[0];
       })
       .catch(reason => {
-        logger.error(`error uploading ${img.path}, reason: ${reason}`);
+        logger.error(`error uploading ${mediaMsg.path}, reason: ${reason}`);
         throw Error(reason);
       });
     } finally {
@@ -137,7 +157,7 @@ export default class {
       port: this.botInfo.port,
     });
 
-    this.bot.axios.defaults.maxContentLength = Infinity;
+    this.bot.axios.defaults.maxContentLength = this.bot.axios.defaults.maxBodyLength = Infinity;
 
     this.bot.on('NewFriendRequestEvent', evt => {
       logger.debug(`detected new friend request event: ${JSON.stringify(evt)}`);
@@ -148,7 +168,7 @@ export default class {
         permission: 'OWNER' | 'ADMINISTRATOR' | 'MEMBER',
       }]) => {
         if (groupList.some(groupItem => groupItem.id === evt.groupId)) {
-          evt.respond('allow');
+          evt.respond(0);
           return logger.info(`accepted friend request from ${evt.fromId} (from group ${evt.groupId})`);
         }
         logger.warn(`received friend request from ${evt.fromId} (from group ${evt.groupId})`);
@@ -165,7 +185,7 @@ export default class {
         remark: string,
       }]) => {
         if (friendList.some(friendItem => friendItem.id = evt.fromId)) {
-          evt.respond('allow');
+          evt.respond(0);
           return logger.info(`accepted group invitation from ${evt.fromId} (friend)`);
         }
         logger.warn(`received group invitation from ${evt.fromId} (unknown)`);

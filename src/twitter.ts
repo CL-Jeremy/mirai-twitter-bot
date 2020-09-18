@@ -262,13 +262,13 @@ export default class {
     tweets: Tweets,
     sendTweets: (msg: MessageChain, text: string, author: string) => void
   ) => {
-    const uploader = (
-      message: ReturnType<typeof Message.Image>,
+    const uploader = <T extends ReturnType<typeof Message.Image | typeof Message.Voice>>(
+      message: T,
       lastResort: (...args) => ReturnType<typeof Message.Plain>
     ) => {
       let timeout = uploadTimeout;
       return retryOnError(() =>
-        this.bot.uploadPic(message, timeout).then(() => message),
+        this.bot.upload(message, timeout).then(() => message),
       (_, count, terminate: (defaultValue: ReturnType<typeof Message.Plain>) => void) => {
         if (count <= maxTrials) {
           timeout *= (count + 2) / (count + 1);
