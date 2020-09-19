@@ -459,7 +459,7 @@ extends CallableInstance<
       if (originTwi.is_quote_status) {
         promise = promise.then(() => {
           messageChain.push(
-            Message.Plain(`\n回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_permalink.expanded}`)
+            Message.Plain(`\n回复此命令查看引用的推文：\n/twitterpic_view ${originTwi.quoted_status_id_str}`)
           );
         });
       }
@@ -469,7 +469,7 @@ extends CallableInstance<
         callback(messageChain, xmlEntities.decode(text), author);
       });
     });
-    return promise;
+    return promise.catch(err => logger.error(`failed to shoot webshot, error: ${JSON.stringify(err)}`));
   }
 }
 
