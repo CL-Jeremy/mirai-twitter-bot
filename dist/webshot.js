@@ -437,7 +437,7 @@ class Webshot extends CallableInstance {
             // refer to quoted tweet, if any
             if (originTwi.is_quote_status) {
                 promise = promise.then(() => {
-                    messageChain.push(mirai_1.Message.Plain(`\n回复此命令查看引用的推文：\n/twitter_view ${originTwi.quoted_status_permalink.expanded}`));
+                    messageChain.push(mirai_1.Message.Plain(`\n回复此命令查看引用的推文：\n/twitter_view ${originTwi.quoted_status_id_str}`));
                 });
             }
             promise.then(() => {
@@ -446,7 +446,7 @@ class Webshot extends CallableInstance {
                 callback(messageChain, xmlEntities.decode(text), author);
             });
         });
-        return promise;
+        return promise.catch(err => logger.error(`failed to shoot webshot, error: ${JSON.stringify(err)}`));
     }
 }
 exports.default = Webshot;
