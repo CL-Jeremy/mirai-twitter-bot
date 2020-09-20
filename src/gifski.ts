@@ -8,7 +8,8 @@ const logger = getLogger('gifski');
 
 const sizeLimit = 10 * 2 ** 20;
 const roundToEven = (n: number) => Math.ceil(n / 2) * 2;
-const isEmpty = (path: PathLike) => statSync(path).size === 0;
+const safeStatSync = (path: PathLike) => !existsSync(path) ? null : statSync(path);
+const isEmptyNullable = (path: PathLike) => !existsSync(path) ? null : statSync(path).size === 0;
 
 export default async function (data: ArrayBuffer, targetWidth?: number) {
     const outputFilePath = temp.path({suffix: '.gif'});
@@ -24,10 +25,9 @@ export default async function (data: ArrayBuffer, targetWidth?: number) {
         '-vn',
         inputFile.path + '.mka',
       ]);
-      if (statSync(inputFile.path + '.mka').size === 0) {
-        unlinkSync(inputFile.path + '.mka');
-      } else {
-        logger.info(`extracted audio to ${inputFile.path + '.mka'}`);
+      switch (isEmptyNullable(inputFile.path + '.mka')) {
+        case true: unlinkSync(inputFile.path + '.mka'); break;
+        case false: logger.info(`extracted audio to ${inputFile.path + '.mka'}`);
       }
       logger.info(`saved video file to ${inputFile.path}, starting gif conversion...`);
       const args = [
@@ -47,7 +47,7 @@ export default async function (data: ArrayBuffer, targetWidth?: number) {
       const gifskiSpawn = spawn('gifski', args);
       const gifskiResult = new Promise<ArrayBufferLike>((resolve, reject) => {
         const sizeChecker = setInterval(() => {
-          if (existsSync(outputFilePath) && statSync(outputFilePath).size > sizeLimit) gifskiSpawn.kill();
+          if (safeStatSync(outputFilePath)?.size > sizeLimit) gifskiSpawn.kill();
         }, 5000);
         gifskiSpawn.on('exit', () => {
           clearInterval(sizeChecker);
@@ -60,7 +60,7 @@ export default async function (data: ArrayBuffer, targetWidth?: number) {
             '-c', 'copy',
             outputFilePath + '.mkv',
           ]);
-          if (isEmpty(outputFilePath + '.mkv')) reject('remux to mkv failed');
+          if (isEmptyNullable(outputFilePath + '.mkv')) reject('remux to mkv failed');
           logger.info(`mkv remuxing succeeded, file path: ${outputFilePath}.mkv`);
           resolve(readFileSync(outputFilePath + '.mkv').buffer);
         });

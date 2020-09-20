@@ -399,9 +399,9 @@ extends CallableInstance<
                     '-ar', '24000',
                     '-',
                   ], {stdio: 'pipe', maxBuffer: 16 * 1024 * 1024, input: input()});
-                  if (!imgReturns.stdout) throw Error(imgReturns.stderr.toString());
+                  if (!imgReturns.stdout.byteLength) throw Error(imgReturns.stderr.toString());
                   base64url = `data:image/gif;base64,${imgReturns.stdout.toString('base64')}`;
-                  if (voiceReturns.stdout) {
+                  if (voiceReturns.stdout.byteLength) {
                     logger.info('video has an audio track, trying to convert it to voice...');
                     temp.track();
                     const inputFile = temp.openSync();
