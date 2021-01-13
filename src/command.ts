@@ -3,8 +3,7 @@ import * as path from 'path';
 
 import { relativeDate } from './datetime';
 import { getLogger } from './loggers';
-import { sendTimeline, sendTweet, ScreenNameNormalizer as normalizer } from './twitter';
-import { BigNumOps } from './utils';
+import { ScreenNameNormalizer as normalizer } from './twitter';
 
 const logger = getLogger('command');
 
@@ -33,13 +32,6 @@ function parseCmd(message: string): {
 
 function parseLink(link: string): string[] {
   let match =
-    link.match(/twitter.com\/([^\/?#]+)\/lists\/([^\/?#]+)/) ||
-    link.match(/^([^\/?#]+)\/([^\/?#]+)$/);
-  if (match) return [match[1], `/lists/${match[2]}`];
-  match =
-    link.match(/twitter.com\/([^\/?#]+)\/status\/(\d+)/);
-  if (match) return [match[1], `/status/${match[2]}`];
-  match =
     link.match(/twitter.com\/([^\/?#]+)/) ||
     link.match(/^([^\/?#]+)$/);
   if (match) return [match[1]];
@@ -71,36 +63,26 @@ function sub(chat: IChat, args: string[], reply: (msg: string) => any,
     return reply('请先添加机器人为好友。');
   }
   if (args.length === 0) {
-    return reply('找不到要订阅的链接。');
+    return reply('找不到要订阅推特故事的链接。');
   }
   const match = parseLink(args[0]);
   if (!match) {
     return reply(`订阅链接格式错误：
-示例：
-https://twitter.com/Saito_Shuka
-https://twitter.com/rikakomoe/lists/lovelive
-https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
-  }
-  let offset = '0';
-  if (match[1]) {
-    const matchStatus = match[1].match(/\/status\/(\d+)/);
-    if (matchStatus) {
-      offset = BigNumOps.plus(matchStatus[1], '-1');
-      delete match[1];
-    }
+示例：https://twitter.com/sunflower930316`);
   }
   const subscribeTo = (link: string, config: {addNew?: boolean, msg?: string} = {}) => {
-    const {addNew = false, msg = `已为此聊天订阅 ${link}`} = config;
+    const {addNew = false, msg = `已为此聊天订阅 ${link} 的推特故事`} = config;
     if (addNew) {
       lock.feed.push(link);
       lock.threads[link] = {
-        offset,
+        permaFeed: normalizer.permaFeeds[link],
+        offset: '0',
         subscribers: [],
         updatedAt: '',
       };
     }
     lock.threads[link].subscribers.push(chat);
-    logger.warn(`chat ${JSON.stringify(chat)} has subscribed ${link}`);
+    logger.warn(`chat ${JSON.stringify(chat)} has subscribed fleets for ${link}`);
     fs.writeFileSync(path.resolve(lockfile), JSON.stringify(lock));
     reply(msg);
   };
@@ -108,17 +90,9 @@ https://twitter.com/TomoyoKurosawa/status/1294613494860361729`);
   if (index > -1) return reply('此聊天已订阅此链接。');
   if (realLink) return subscribeTo(realLink);
   const [rawUserName, more] = match;
-  if (rawUserName.toLowerCase() === 'i' && more?.match(/lists\/(\d+)/)) {
-    return subscribeTo(linkBuilder('i', more), {addNew: true});
-  }
   normalizer.normalizeLive(rawUserName).then(userName => {
     if (!userName) return reply(`找不到用户 ${rawUserName.replace(/^@?(.*)$/, '@$1')}。`);
-    const link = linkBuilder(userName, more);
-    const msg = (offset === '0') ?
-      undefined :
-        `已为此聊天订阅 ${link} 并回溯到此动态 ID（含）之后的第一条动态。
-（参见：https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html）`;
-    subscribeTo(link, {addNew: true, msg});
+    subscribeTo(linkBuilder(userName, more), {addNew: true});
   });
 }
 
@@ -129,19 +103,19 @@ function unsub(chat: IChat, args: string[], reply: (msg: string) => any,
     return reply('请先添加机器人为好友。');
   }
   if (args.length === 0) {
-    return reply('找不到要退订的链接。');
+    return reply('找不到要退订推特故事的链接。');
   }
   const match = parseLink(args[0]);
   if (!match) {
     return reply('链接格式有误。');
   }
   const [link, index] = linkFinder(match, chat, lock);
-  if (index === -1) return list(chat, args, msg => reply('您没有订阅此链接。\n' + msg), lock);
+  if (index === -1) return list(chat, args, msg => reply('您没有订阅此链接的推特故事。\n' + msg), lock);
   else {
     lock.threads[link].subscribers.splice(index, 1);
     fs.writeFileSync(path.resolve(lockfile), JSON.stringify(lock));
     logger.warn(`chat ${JSON.stringify(chat)} has unsubscribed ${link}`);
-    return reply(`已为此聊天退订 ${link}`);
+    return reply(`已为此聊天退订 ${link} 的推特故事`);
   }
 }
 
@@ -155,66 +129,7 @@ function list(chat: IChat, _: string[], reply: (msg: string) => any, lock: ILock
       chat.chatID === chatID && chat.chatType === chatType
     )) links.push(`${key} ${relativeDate(lock.threads[key].updatedAt)}`);
   });
-  return reply('此聊天中订阅的链接：\n' + links.join('\n'));
+  return reply('此聊天中订阅推特故事的链接：\n' + links.join('\n'));
 }
 
-function view(chat: IChat, args: string[], reply: (msg: string) => any): void {
-  if (args.length === 0) {
-    return reply('找不到要查看的链接。');
-  }
-  const match = args[0].match(/^(?:.*twitter.com\/[^\/?#]+\/status\/)?(\d+)/);
-  if (!match) {
-    return reply('链接格式有误。');
-  }
-  try {
-    sendTweet(match[1], chat);
-  } catch (e) {
-    reply('推特机器人尚未加载完毕，请稍后重试。');
-  }
-}
-
-function query(chat: IChat, args: string[], reply: (msg: string) => any): void {
-  if (args.length === 0) {
-    return reply('找不到要查询的用户。');
-  }
-  const match = 
-    args[0].match(/twitter.com\/([^\/?#]+)/) ||
-    args[0].match(/^([^\/?#]+)$/);
-  if (!match) {
-    return reply('链接格式有误。');
-  }
-  const conf: {
-    username: string,
-    count?: string,
-    since?: string,
-    until?: string,
-    noreps: string,
-    norts: string,
-  } = {username: match[1], noreps: 'on', norts: 'off'};
-  const confZH: Record<Exclude<keyof typeof conf, 'username'>, string> = {
-    count: '数量上限',
-    since: '起始点',
-    until: '结束点',
-    noreps: '忽略回复推文（on/off）',
-    norts: '忽略原生转推（on/off）',
-  };
-  for (const arg of args.slice(1)) {
-    const optMatch = arg.match(/^(count|since|until|noreps|norts)=(.*)/);
-    if (!optMatch) return reply(`未定义的查询参数：${arg}。`);
-    const optKey = optMatch[1] as keyof typeof confZH;
-    if (optMatch.length === 1) return reply(`查询${confZH[optKey]}参数格式有误。`);
-    conf[optKey] = optMatch[2];
-    if (optMatch[2] === '') return reply(`查询${confZH[optKey]}参数值不可为空。`);
-  }
-  if (conf.count !== undefined && !Number(conf.count) || Math.abs(Number(conf.count)) > 50) {
-    return reply('查询数量上限参数为零、非数值或超出取值范围。');
-  }
-  try {
-    sendTimeline(conf, chat);
-  } catch (e) {
-    logger.error(`error querying timeline, error: ${e}`);
-    reply('推特机器人尚未加载完毕，请稍后重试。');
-  }
-}
-
-export { parseCmd, sub, list, unsub, view, query };
+export { parseCmd, sub, list, unsub };

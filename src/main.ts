@@ -145,6 +145,8 @@ const worker = new Worker({
   consumer_secret: config.twitter_consumer_secret,
   access_token_key: config.twitter_access_token_key,
   access_token_secret: config.twitter_access_token_secret,
+  private_auth_token: config.twitter_private_auth_token,
+  private_csrf_token: config.twitter_private_csrf_token,
   lock,
   lockfile: config.lockfile,
   workInterval: config.work_interval,

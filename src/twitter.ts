@@ -1,11 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as request from 'request';
 import * as Twitter from 'twitter';
 import TwitterTypes from 'twitter-d';
 
 import { getLogger } from './loggers';
 import QQBot, { Message, MessageChain } from './mirai';
-import { chainPromises, BigNumOps } from './utils';
+import { BigNumOps } from './utils';
 import Webshot from './webshot';
 
 interface IWorkerOption {
@@ -18,6 +19,8 @@ interface IWorkerOption {
   consumer_secret: string;
   access_token_key: string;
   access_token_secret: string;
+  private_csrf_token: string;
+  private_auth_token: string;
   mode: number;
 }
 
@@ -25,6 +28,12 @@ export class ScreenNameNormalizer {
 
   // tslint:disable-next-line: variable-name
   public static _queryUser: (username: string) => Promise<string>;
+
+  public static permaFeeds = {};
+
+  public static savePermaFeedForUser(user: FullUser) {
+    this.permaFeeds[`https://twitter.com/${user.screen_name}`] = `https://twitter.com/i/user/${user.id_str}`;
+  }
 
   public static normalize = (username: string) => username.toLowerCase().replace(/^@/, '');
 
@@ -42,31 +51,6 @@ export class ScreenNameNormalizer {
     return this.normalize(username);
   }
 }
-
-export let sendTweet = (id: string, receiver: IChat): void => {
-  throw Error();
-};
-
-export interface ITimelineQueryConfig {
-  username: string;
-  count?: number;
-  since?: string;
-  until?: string;
-  noreps?: boolean;
-  norts?: boolean;
-}
-
-export let sendTimeline = (
-  conf: {[key in keyof ITimelineQueryConfig]: string},
-  receiver: IChat
-): void => {
-  throw Error();
-};
-
-const TWITTER_EPOCH = 1288834974657;
-const snowflake = (epoch: number) =>
-  Number.isNaN(epoch) ? undefined :
-    BigNumOps.lShift(String(epoch - 1 - TWITTER_EPOCH), 22);
 
 const logger = getLogger('twitter');
 const maxTrials = 3;
@@ -99,21 +83,51 @@ const retryOnError = <T, U>(
 });
 
 export type FullUser = TwitterTypes.FullUser;
-export type Entities = TwitterTypes.Entities;
-export type ExtendedEntities = TwitterTypes.ExtendedEntities;
 export type MediaEntity = TwitterTypes.MediaEntity;
 
-interface ITweet extends TwitterTypes.Status {
-  user: FullUser;
-  retweeted_status?: Tweet;
+type TwitterMod = {
+  -readonly [K in keyof Twitter]: Twitter[K];
+} & {
+  options?: any;
 }
 
-export type Tweet = ITweet;
-export type Tweets = ITweet[];
+export type Fleet = {
+  created_at: string;
+  deleted_at: string;
+  expiration: string;
+  fleet_id: string;
+  fleet_thread_id: string;
+  media_bounding_boxes: [{
+    anchor_point_x: number;
+    anchor_point_y: number;
+    width: number;
+    height: number;
+    rotation: number;
+    entity: {
+        type: string;
+        value: any;
+    }
+  }];
+  media_entity: MediaEntity;
+  media_key: {
+    media_category: 'TWEET_IMAGE' | 'TWEET_VIDEO';
+    media_id: number;
+    media_id_str: string;
+  };
+  mentions: any;
+  mentions_str: any;
+  read: boolean;
+  text: string;
+  user_id: number;
+  user_id_str: string;
+};
+
+export type Fleets = Fleet[];
 
 export default class {
 
   private client: Twitter;
+  private privateClient: TwitterMod
   private lock: ILock;
   private lockfile: string;
   private workInterval: number;
@@ -129,53 +143,23 @@ export default class {
       access_token_key: opt.access_token_key,
       access_token_secret: opt.access_token_secret,
     });
+    this.privateClient = new Twitter({
+      bearer_token: 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+    } as any);
+    this.privateClient.request = request.defaults({
+      headers: {
+        ...this.privateClient.options.request_options.headers,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cookie': `auth_token=${opt.private_auth_token}; ct0=${opt.private_csrf_token};`,
+        'X-CSRF-Token': opt.private_csrf_token,
+      }
+    });
     this.lockfile = opt.lockfile;
     this.lock = opt.lock;
     this.workInterval = opt.workInterval;
     this.bot = opt.bot;
-    this.webshotDelay = opt.webshotDelay;
     this.mode = opt.mode;
     ScreenNameNormalizer._queryUser = this.queryUser;
-    sendTweet = (id, receiver) => {
-      this.getTweet(id, this.sendTweets(`tweet ${id}`, receiver))
-      .catch((err: {code: number, message: string}[]) => {
-        if (err[0].code !== 144) {
-          logger.warn(`error retrieving tweet: ${err[0].message}`);
-          this.bot.sendTo(receiver, `获取推文时出现错误：${err[0].message}`);
-        }
-        this.bot.sendTo(receiver, '找不到请求的推文，它可能已被删除。');
-      });
-    };
-    sendTimeline = ({username, count, since, until, noreps, norts}, receiver) => {
-      const countNum = Number(count) || 10;
-      (countNum > 0 ? this.queryTimeline : this.queryTimelineReverse)({
-        username,
-        count: Math.abs(countNum),
-        since: BigNumOps.parse(since) || snowflake(new Date(since).getTime()),
-        until: BigNumOps.parse(until) || snowflake(new Date(until).getTime()),
-        noreps: {on: true, off: false}[noreps],
-        norts: {on: true, off: false}[norts],
-      })
-      .then(tweets => chainPromises(
-        tweets.map(tweet => this.bot.sendTo(receiver, `\
-编号：${tweet.id_str}
-时间：${tweet.created_at}
-媒体：${tweet.extended_entities ? '有' : '无'}
-正文：\n${tweet.full_text.replace(/^([\s\S\n]{50})[\s\S\n]+?( https:\/\/t.co\/.*)?$/, '$1…$2')}`
-        ))
-        .concat(this.bot.sendTo(receiver, tweets.length ?
-          '时间线查询完毕，使用 /twitter_view <编号> 查看推文详细内容。' :
-            '时间线查询完毕，没有找到符合条件的推文。'
-        ))
-      ))
-      .catch((err: {code: number, message: string}[]) => {
-        if (err[0]?.code !== 34) {
-          logger.warn(`error retrieving timeline: ${err[0]?.message || err}`);
-          return this.bot.sendTo(receiver, `获取时间线时出现错误：${err[0]?.message || err}`);
-        }
-        this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
-      });
-    };
   }
 
   public launch = () => {
@@ -187,80 +171,15 @@ export default class {
 
   public queryUser = (username: string) =>
     this.client.get('users/show', {screen_name: username})
-    .then((user: FullUser) => user.screen_name)
+    .then((user: FullUser) => {
+      ScreenNameNormalizer.savePermaFeedForUser(user);
+      return user.screen_name;
+    })
 
-  public queryTimelineReverse = (conf: ITimelineQueryConfig) => {
-    if (!conf.since) return this.queryTimeline(conf);
-    const count = conf.count;
-    const maxID = conf.until;
-    conf.count = undefined;
-    const until = () =>
-      BigNumOps.min(maxID, BigNumOps.plus(conf.since, String(7 * 24 * 3600 * 1000 * 2 ** 22)));
-    conf.until = until();
-    const promise = (tweets: ITweet[]): Promise<ITweet[]> =>
-      this.queryTimeline(conf).then(newTweets => {
-        tweets = newTweets.concat(tweets);
-        conf.since = conf.until;
-        conf.until = until();
-        if (
-          tweets.length >= count ||
-          BigNumOps.compare(conf.since, conf.until) >= 0
-        ) {
-          return tweets.slice(-count);
-        }
-        return promise(tweets);
-      });
-    return promise([]);
-  }
-
-  public queryTimeline = (
-    { username, count, since, until, noreps, norts }: ITimelineQueryConfig
-  ) => {
-    username = username.replace(/^@?(.*)$/, '@$1');
-    logger.info(`querying timeline of ${username} with config: ${
-      JSON.stringify({
-        ...(count && {count}),
-        ...(since && {since}),
-        ...(until && {until}),
-        ...(noreps && {noreps}),
-        ...(norts && {norts}),
-    })}`);
-    const fetchTimeline = (
-      config = {
-        screen_name: username.slice(1),
-        trim_user: true,
-        exclude_replies: noreps ?? true,
-        include_rts: !(norts ?? false),
-        since_id: since,
-        max_id: until,
-        tweet_mode: 'extended',
-      },
-      tweets: ITweet[] = []
-    ): Promise<ITweet[]> =>
-      this.client.get('statuses/user_timeline', config)
-        .then((newTweets: ITweet[]) => {
-          if (newTweets.length) {
-            logger.debug(`fetched tweets: ${JSON.stringify(newTweets)}`);
-            config.max_id = BigNumOps.plus('-1', newTweets[newTweets.length - 1].id_str);
-            logger.info(`timeline query of ${username} yielded ${
-              newTweets.length
-            } new tweets, next query will start at offset ${config.max_id}`);
-            tweets.push(...newTweets);
-          }
-          if (!newTweets.length || tweets.length >= count) {
-            logger.info(`timeline query of ${username} finished successfully, ${
-              tweets.length
-            } tweets have been fetched`);
-            return tweets.slice(0, count);
-          }
-          return fetchTimeline(config, tweets);
-        });
-    return fetchTimeline();
-  }
-
-  private workOnTweets = (
-    tweets: Tweets,
-    sendTweets: (msg: MessageChain, text: string, author: string) => void
+  private workOnFleets = (
+    user: FullUser,
+    fleets: Fleets,
+    sendFleets: (msg: MessageChain, text: string) => void
   ) => {
     const uploader = (
       message: ReturnType<typeof Message.Image>,
@@ -279,24 +198,11 @@ export default class {
         }
       });
     };
-    return this.webshot(tweets, uploader, sendTweets, this.webshotDelay);
+    return this.webshot(user, fleets, uploader, sendFleets, this.webshotDelay);
   }
 
-  public getTweet = (id: string, sender: (msg: MessageChain, text: string, author: string) => void) => {
-    const endpoint = 'statuses/show';
-    const config = {
-      id,
-      tweet_mode: 'extended',
-    };
-    return this.client.get(endpoint, config)
-    .then((tweet: Tweet) => {
-      logger.debug(`api returned tweet ${JSON.stringify(tweet)} for query id=${id}`);
-      return this.workOnTweets([tweet], sender);
-    });
-  }
-
-  private sendTweets = (source?: string, ...to: IChat[]) =>
-  (msg: MessageChain, text: string, author: string) => {
+  private sendFleets = (source?: string, ...to: IChat[]) =>
+  (msg: MessageChain, text: string) => {
     to.forEach(subscriber => {
       logger.info(`pushing data${source ? ` of ${source}` : ''} to ${JSON.stringify(subscriber)}`);
       retryOnError(
@@ -307,7 +213,7 @@ export default class {
         } else {
           logger.warn(`${count - 1} consecutive failures while sending` +
             'message chain, trying plain text instead...');
-          terminate(this.bot.sendTo(subscriber, author + text));
+          terminate(this.bot.sendTo(subscriber, text));
         }
       });
     });
@@ -337,80 +243,59 @@ export default class {
     const currentFeed = lock.feed[lock.workon];
     logger.debug(`pulling feed ${currentFeed}`);
 
-    const promise = new Promise(resolve => {
-      let match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)\/lists\/([^\/]+)/);
-      let config: any;
-      let endpoint: string;
-      if (match) {
-        if (match[1] === 'i') {
-          config = {
-            list_id: match[2],
-            tweet_mode: 'extended',
-          };
-        } else {
-          config = {
-            owner_screen_name: match[1],
-            slug: match[2],
-            tweet_mode: 'extended',
-          };
-        }
-        endpoint = 'lists/statuses';
-      } else {
-        match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)/);
-        if (match) {
-          config = {
-            screen_name: match[1],
-            exclude_replies: false,
-            tweet_mode: 'extended',
-          };
-          endpoint = 'statuses/user_timeline';
-        }
-      }
-
-      if (endpoint) {
-        const offset = lock.threads[currentFeed].offset as unknown as number;
-        if (offset > 0) config.since_id = offset;
-        this.client.get(endpoint, config, (error, tweets, response) => {
-          if (error) {
-            if (error instanceof Array && error.length > 0 && error[0].code === 34) {
-              logger.warn(`error on fetching tweets for ${currentFeed}: ${JSON.stringify(error)}`);
-              lock.threads[currentFeed].subscribers.forEach(subscriber => {
-                logger.info(`sending notfound message of ${currentFeed} to ${JSON.stringify(subscriber)}`);
-                this.bot.sendTo(subscriber, `链接 ${currentFeed} 指向的用户或列表不存在，请退订。`).catch();
-              });
-            } else {
-              logger.error(`unhandled error on fetching tweets for ${currentFeed}: ${JSON.stringify(error)}`);
-            }
-            resolve();
-          } else resolve(tweets);
-        });
-      }
+    type FleetFeed = {fleet_threads: {fleets: Fleets}[]};
+    let user: FullUser;
+    let match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)/);
+    if (match) match = lock.threads[currentFeed].permaFeed.match(/https:\/\/twitter.com\/i\/user\/([^\/]+)/);
+    if (!match) {
+      logger.error(`cannot get endpoint for feed ${currentFeed}`);
+      return;
+    }
+    let endpoint = `https://api.twitter.com/fleets/v1/user_fleets?user_id=${match[1]}`;
+    const promise = new Promise<FleetFeed | void>((resolve, reject) => {
+      this.privateClient.get(endpoint, (error, fleetFeed: FleetFeed, _) => {
+        if (error) reject(error);
+        else resolve(fleetFeed);
+      });
     });
 
-    promise.then((tweets: Tweets) => {
-      logger.debug(`api returned ${JSON.stringify(tweets)} for feed ${currentFeed}`);
+    this.client.get('users/show', {user_id: match[1]})
+    .then((fullUser: FullUser) => { user = fullUser; return promise; })
+    .catch(error => {
+      logger.error(`unhandled error on fetching fleets for ${currentFeed}: ${JSON.stringify(error)}`);
+    })
+    .then((fleetFeed: FleetFeed) => {
+      logger.debug(`private api returned ${JSON.stringify(fleetFeed)} for feed ${currentFeed}`);
+      logger.debug(`api returned ${JSON.stringify(user)} for owner of feed ${currentFeed}`);
       const currentThread = lock.threads[currentFeed];
 
       const updateDate = () => currentThread.updatedAt = new Date().toString();
-      if (!tweets || tweets.length === 0) { updateDate(); return; }
+      if (!fleetFeed || fleetFeed.fleet_threads.length === 0) { updateDate(); return; }
 
-      const topOfFeed = tweets[0].id_str;
-      const updateOffset = () => currentThread.offset = topOfFeed;
+      let fleets = fleetFeed.fleet_threads[0].fleets;
+      const bottomOfFeed = fleets.slice(-1)[0].fleet_id.substring(3);
+      const updateOffset = () => currentThread.offset = bottomOfFeed;
 
       if (currentThread.offset === '-1') { updateOffset(); return; }
-      if (currentThread.offset === '0') tweets.splice(1);
+      if (currentThread.offset !== '0') {
+        const readCount = fleets.findIndex(fleet => {
+          return Number(BigNumOps.plus(fleet.fleet_id.substring(3), `-${currentThread.offset}`)) > 0;
+        });
+        if (readCount === -1) return;
+        fleets = fleets.slice(readCount);
+      }
 
-      return this.workOnTweets(tweets, this.sendTweets(`thread ${currentFeed}`, ...currentThread.subscribers))
+      return this.workOnFleets(user, fleets, this.sendFleets(`thread ${currentFeed}`, ...currentThread.subscribers))
       .then(updateDate).then(updateOffset);
     })
-      .then(() => {
-        lock.workon++;
-        let timeout = this.workInterval * 1000 / lock.feed.length;
-        if (timeout < 1000) timeout = 1000;
-        fs.writeFileSync(path.resolve(this.lockfile), JSON.stringify(lock));
-        setTimeout(() => {
-          this.work();
-        }, timeout);
-      });
+    .then(() => {
+      lock.workon++;
+      let timeout = this.workInterval * 1000 / lock.feed.length;
+      if (timeout < 1000) timeout = 1000;
+      fs.writeFileSync(path.resolve(this.lockfile), JSON.stringify(lock));
+      setTimeout(() => {
+        this.work();
+      }, timeout);
+    })
   }
 }

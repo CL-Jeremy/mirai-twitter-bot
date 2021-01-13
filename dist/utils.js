@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BigNumOps = exports.chainPromises = void 0;
-exports.chainPromises = (promises, reducer = (p1, p2) => p1.then(() => p2), initialValue) => promises.reduce(reducer, Promise.resolve(initialValue));
+const chainPromises = (promises, reducer = (p1, p2) => p1.then(() => p2), initialValue) => promises.reduce(reducer, Promise.resolve(initialValue));
+exports.chainPromises = chainPromises;
 const splitBigNumAt = (num, at) => num.replace(RegExp(String.raw `^([+-]?)(\d+)(\d{${at}})$`), '$1$2,$1$3')
     .replace(/^([^,]*)$/, '0,$1').split(',')
     .map(Number);

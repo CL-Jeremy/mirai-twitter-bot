@@ -4,7 +4,7 @@ import Mirai, { MessageType } from 'mirai-ts';
 import MiraiMessage from 'mirai-ts/dist/message';
 import * as temp from 'temp';
 
-import { parseCmd, query, view } from './command';
+import { parseCmd } from './command';
 import { getLogger } from './loggers';
 
 const logger = getLogger('qqbot');
@@ -137,7 +137,7 @@ export default class {
       port: this.botInfo.port,
     });
 
-    this.bot.axios.defaults.maxContentLength = Infinity;
+    this.bot.axios.defaults.maxContentLength = this.bot.axios.defaults.maxBodyLength = Infinity;
 
     this.bot.on('NewFriendRequestEvent', evt => {
       logger.debug(`detected new friend request event: ${JSON.stringify(evt)}`);
@@ -148,7 +148,7 @@ export default class {
         permission: 'OWNER' | 'ADMINISTRATOR' | 'MEMBER',
       }]) => {
         if (groupList.some(groupItem => groupItem.id === evt.groupId)) {
-          evt.respond('allow');
+          evt.respond(0); // allow
           return logger.info(`accepted friend request from ${evt.fromId} (from group ${evt.groupId})`);
         }
         logger.warn(`received friend request from ${evt.fromId} (from group ${evt.groupId})`);
@@ -165,7 +165,7 @@ export default class {
         remark: string,
       }]) => {
         if (friendList.some(friendItem => friendItem.id = evt.fromId)) {
-          evt.respond('allow');
+          evt.respond(0); // allow
           return logger.info(`accepted group invitation from ${evt.fromId} (friend)`);
         }
         logger.warn(`received group invitation from ${evt.fromId} (unknown)`);
@@ -177,58 +177,23 @@ export default class {
       const chat = await this.getChat(msg);
       const cmdObj = parseCmd(msg.plain);
       switch (cmdObj.cmd) {
-        case 'twitter_view':
-        case 'twitter_get':
-          view(chat, cmdObj.args, msg.reply);
-          break;
-        case 'twitter_query':
-        case 'twitter_gettimeline':
-          query(chat, cmdObj.args, msg.reply);
-          break;
-        case 'twitter_sub':
-        case 'twitter_subscribe':
+        case 'twitterfleets_sub':
+        case 'twitterfleets_subscribe':
           this.botInfo.sub(chat, cmdObj.args, msg.reply);
           break;
-        case 'twitter_unsub':
-        case 'twitter_unsubscribe':
+        case 'twitterfleets_unsub':
+        case 'twitterfleets_unsubscribe':
           this.botInfo.unsub(chat, cmdObj.args, msg.reply);
           break;
         case 'ping':
-        case 'twitter':
+        case 'twitterfleets':
           this.botInfo.list(chat, cmdObj.args, msg.reply);
           break;
         case 'help':
-          if (cmdObj.args.length === 0) {
-            msg.reply(`推特搬运机器人：
-/twitter - 查询当前聊天中的推文订阅
-/twitter_subscribe〈链接|用户名〉- 订阅 Twitter 推文搬运
-/twitter_unsubscribe〈链接|用户名〉- 退订 Twitter 推文搬运
-/twitter_view〈链接〉- 查看推文
-/twitter_query〈链接|用户名〉[参数列表...] - 查询时间线（详见 /help twitter_query）\
-${chat.chatType === ChatType.Temp ?
-  '\n（当前游客模式下无法使用订阅功能，请先添加本账号为好友。）' : ''
-}`);
-          } else if (cmdObj.args[0] === 'twitter_query') {
-            msg.reply(`查询时间线中的推文：
-/twitter_query〈链接|用户名〉[〈参数 1〉=〈值 1〉〈参数 2〉=〈值 2〉...]
-
-参数列表（方框内全部为可选，留空则为默认）：
-    count：查询数量上限（类型：非零整数，最大值正负 50）[默认值：10]
-    since：查询起始点（类型：正整数或日期）[默认值：（空，无限过去）]
-    until：查询结束点（类型：正整数或日期）[默认值：（空，当前时刻）]
-    noreps 忽略回复推文（类型：on/off）[默认值：on（是）]
-    norts：忽略原生转推（类型：on/off）[默认值：off（否）]`)
-              .then(() => msg.reply(`\
-起始点和结束点为正整数时取推特推文编号作为比较基准，否则会尝试作为日期读取。
-推荐的日期格式：2012-12-22 12:22 UTC+2 （日期和时间均为可选，可分别添加）
-count 为正时，从新向旧查询；为负时，从旧向新查询
-count 与 since/until 并用时，取二者中实际查询结果较少者
-例子：/twitter_query RiccaTachibana count=5 since="2019-12-30\
- UTC+9" until="2020-01-06 UTC+8" norts=on
-    从起始时间点（含）到结束时间点（不含）从新到旧获取最多 5 条推文，\
-其中不包含原生转推（实际上用户只发了 1 条）`)
-            );
-          }
+          msg.reply(`推特故事搬运机器人：
+/twitterfleets - 查询当前聊天中的推特故事订阅
+/twitterfleets_subscribe [链接] - 订阅 Twitter Fleets 搬运
+/twitterfleets_unsubscribe [链接] - 退订 Twitter Fleets 搬运`);
       }
     });
 }

@@ -7,6 +7,8 @@
   "twitter_consumer_secret": "",
   "twitter_access_token_key": "",
   "twitter_access_token_secret": "",
+  "twitter_private_auth_token": "",
+  "twitter_private_csrf_token": "",
   "mode": 0,
   "resume_on_start": false,
   "work_interval": 60,

@@ -27,6 +27,7 @@ interface ILock {
   threads: {
     [key: string]:
       {
+        permaFeed: string,
         offset: string,
         updatedAt: string,
         subscribers: IChat[],
