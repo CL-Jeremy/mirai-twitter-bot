@@ -20,6 +20,7 @@ const bigNumPlus = (num1: string, num2: string) => {
   } else {
     [high, low] = [high + Math.trunc(low / 10 ** 15), low % 10 ** 15];
   }
+  if (high === 0) return low.toString();
   return `${high}${Math.abs(low).toString().padStart(15, '0')}`;
 };
 
