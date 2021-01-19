@@ -18,6 +18,8 @@ const bigNumPlus = (num1, num2) => {
     else {
         [high, low] = [high + Math.trunc(low / Math.pow(10, 15)), low % Math.pow(10, 15)];
     }
+    if (high === 0)
+        return low.toString();
     return `${high}${Math.abs(low).toString().padStart(15, '0')}`;
 };
 const bigNumCompare = (num1, num2) => Math.sign(Number(bigNumPlus(num1, num2.replace(/^([+-]?)(\d+)/, (_, $1, $2) => `${$1 === '-' ? '' : '-'}${$2}`))));
