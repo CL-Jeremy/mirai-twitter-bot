@@ -52,6 +52,10 @@ export class ScreenNameNormalizer {
   }
 }
 
+export let sendAllFleets = (username: string, receiver: IChat): void => {
+  throw Error();
+};
+
 const logger = getLogger('twitter');
 const maxTrials = 3;
 const uploadTimeout = 10000;
@@ -89,9 +93,9 @@ type TwitterMod = {
   -readonly [K in keyof Twitter]: Twitter[K];
 } & {
   options?: any;
-}
+};
 
-export type Fleet = {
+interface IFleet {
   created_at: string;
   deleted_at: string;
   expiration: string;
@@ -120,14 +124,19 @@ export type Fleet = {
   text: string;
   user_id: number;
   user_id_str: string;
-};
+}
 
-export type Fleets = Fleet[];
+export type Fleet = IFleet;
+export type Fleets = IFleet[];
+
+interface IFleetFeed {
+  fleet_threads: {fleets: Fleets}[];
+}
 
 export default class {
 
   private client: Twitter;
-  private privateClient: TwitterMod
+  private privateClient: TwitterMod;
   private lock: ILock;
   private lockfile: string;
   private workInterval: number;
@@ -150,9 +159,9 @@ export default class {
       headers: {
         ...this.privateClient.options.request_options.headers,
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': `auth_token=${opt.private_auth_token}; ct0=${opt.private_csrf_token};`,
+        Cookie: `auth_token=${opt.private_auth_token}; ct0=${opt.private_csrf_token};`,
         'X-CSRF-Token': opt.private_csrf_token,
-      }
+      },
     });
     this.lockfile = opt.lockfile;
     this.lock = opt.lock;
@@ -160,6 +169,30 @@ export default class {
     this.bot = opt.bot;
     this.mode = opt.mode;
     ScreenNameNormalizer._queryUser = this.queryUser;
+    sendAllFleets = (username, receiver) => {
+      this.client.get('users/show', {screen_name: username})
+      .then((user: FullUser) => {
+        const feed = `https://twitter.com/${user.screen_name}`;
+        return this.getFleets(user.id_str)
+        .catch(error => {
+          logger.error(`unhandled error while fetching fleets for ${feed}: ${JSON.stringify(error)}`);
+          this.bot.sendTo(receiver, `获取 Fleets 时出现错误：${error}`);
+        })
+        .then((fleetFeed: IFleetFeed) => {
+          if (!fleetFeed || fleetFeed.fleet_threads.length === 0) {
+            this.bot.sendTo(receiver, `当前用户（@${user.screen_name}）没有可用的 Fleets。`);
+            return;
+          }
+          this.workOnFleets(user, fleetFeed.fleet_threads[0].fleets, this.sendFleets(`thread ${feed}`, receiver));
+        });
+      })
+      .catch((err: {code: number, message: string}[]) => {
+        if (err[0].code !== 50) {
+          logger.warn(`error looking up user: ${err[0].message}, unable to fetch fleets`);
+        }
+        this.bot.sendTo(receiver, `找不到用户 ${username.replace(/^@?(.*)$/, '@$1')}。`);
+      });
+    };
   }
 
   public launch = () => {
@@ -218,6 +251,14 @@ export default class {
       });
     });
   }
+  
+  private getFleets = (userID: string) => new Promise<IFleetFeed | void>((resolve, reject) => {
+    const endpoint = `https://api.twitter.com/fleets/v1/user_fleets?user_id=${userID}`;
+    this.privateClient.get(endpoint, (error, fleetFeed: IFleetFeed, _) => {
+      if (error) reject(error);
+      else resolve(fleetFeed);
+    });
+  })
 
   public work = () => {
     const lock = this.lock;
@@ -243,7 +284,6 @@ export default class {
     const currentFeed = lock.feed[lock.workon];
     logger.debug(`pulling feed ${currentFeed}`);
 
-    type FleetFeed = {fleet_threads: {fleets: Fleets}[]};
     let user: FullUser;
     let match = currentFeed.match(/https:\/\/twitter.com\/([^\/]+)/);
     if (match) match = lock.threads[currentFeed].permaFeed.match(/https:\/\/twitter.com\/i\/user\/([^\/]+)/);
@@ -251,20 +291,13 @@ export default class {
       logger.error(`cannot get endpoint for feed ${currentFeed}`);
       return;
     }
-    let endpoint = `https://api.twitter.com/fleets/v1/user_fleets?user_id=${match[1]}`;
-    const promise = new Promise<FleetFeed | void>((resolve, reject) => {
-      this.privateClient.get(endpoint, (error, fleetFeed: FleetFeed, _) => {
-        if (error) reject(error);
-        else resolve(fleetFeed);
-      });
-    });
 
     this.client.get('users/show', {user_id: match[1]})
-    .then((fullUser: FullUser) => { user = fullUser; return promise; })
+    .then((fullUser: FullUser) => { user = fullUser; return this.getFleets(match[1]); })
     .catch(error => {
       logger.error(`unhandled error on fetching fleets for ${currentFeed}: ${JSON.stringify(error)}`);
     })
-    .then((fleetFeed: FleetFeed) => {
+    .then((fleetFeed: IFleetFeed) => {
       logger.debug(`private api returned ${JSON.stringify(fleetFeed)} for feed ${currentFeed}`);
       logger.debug(`api returned ${JSON.stringify(user)} for owner of feed ${currentFeed}`);
       const currentThread = lock.threads[currentFeed];
@@ -278,9 +311,8 @@ export default class {
 
       if (currentThread.offset === '-1') { updateOffset(); return; }
       if (currentThread.offset !== '0') {
-        const readCount = fleets.findIndex(fleet => {
-          return Number(BigNumOps.plus(fleet.fleet_id.substring(3), `-${currentThread.offset}`)) > 0;
-        });
+        const readCount = fleets.findIndex(fleet =>
+          Number(BigNumOps.plus(fleet.fleet_id.substring(3), `-${currentThread.offset}`)) > 0);
         if (readCount === -1) return;
         fleets = fleets.slice(readCount);
       }
@@ -296,6 +328,6 @@ export default class {
       setTimeout(() => {
         this.work();
       }, timeout);
-    })
+    });
   }
 }

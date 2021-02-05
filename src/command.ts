@@ -3,7 +3,7 @@ import * as path from 'path';
 
 import { relativeDate } from './datetime';
 import { getLogger } from './loggers';
-import { ScreenNameNormalizer as normalizer } from './twitter';
+import { sendAllFleets, ScreenNameNormalizer as normalizer } from './twitter';
 
 const logger = getLogger('command');
 
@@ -31,7 +31,7 @@ function parseCmd(message: string): {
 }
 
 function parseLink(link: string): string[] {
-  let match =
+  const match =
     link.match(/twitter.com\/([^\/?#]+)/) ||
     link.match(/^([^\/?#]+)$/);
   if (match) return [match[1]];
@@ -132,4 +132,20 @@ function list(chat: IChat, _: string[], reply: (msg: string) => any, lock: ILock
   return reply('此聊天中订阅推特故事的链接：\n' + links.join('\n'));
 }
 
-export { parseCmd, sub, list, unsub };
+function view(chat: IChat, args: string[], reply: (msg: string) => any): void {
+  if (args.length === 0) {
+    return reply('找不到要查看的链接。');
+  }
+  const checkedMatch = parseLink(args[0]);
+  if (!checkedMatch) {
+    return reply(`订阅链接格式错误：
+示例：https://twitter.com/sunflower930316`);
+  }
+  try {
+    sendAllFleets(checkedMatch[0], chat);
+  } catch (e) {
+    reply('推特机器人尚未加载完毕，请稍后重试。');
+  }
+}
+
+export { parseCmd, sub, list, unsub, view };

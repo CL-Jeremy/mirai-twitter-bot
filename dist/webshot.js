@@ -100,8 +100,8 @@ class Webshot extends CallableInstance {
             });
             const messageChain = [];
             // text processing
-            let author = `${user.name} (@${user.screen_name}):\n`;
-            let date = `${new Date(fleet.created_at)}\n`;
+            const author = `${user.name} (@${user.screen_name}):\n`;
+            const date = `${new Date(fleet.created_at)}\n`;
             let text = (_b = author + date + ((_a = fleet.media_bounding_boxes) === null || _a === void 0 ? void 0 : _a.map(box => box.entity.value).join('\n'))) !== null && _b !== void 0 ? _b : '';
             messageChain.push(mirai_1.Message.Plain(author + date));
             // fetch extra entities

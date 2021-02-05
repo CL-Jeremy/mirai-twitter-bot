@@ -4,7 +4,7 @@ import Mirai, { MessageType } from 'mirai-ts';
 import MiraiMessage from 'mirai-ts/dist/message';
 import * as temp from 'temp';
 
-import { parseCmd } from './command';
+import { parseCmd, view } from './command';
 import { getLogger } from './loggers';
 
 const logger = getLogger('qqbot');
@@ -177,6 +177,10 @@ export default class {
       const chat = await this.getChat(msg);
       const cmdObj = parseCmd(msg.plain);
       switch (cmdObj.cmd) {
+        case 'twitterfleets_view':
+        case 'twitterfleets_get':
+          view(chat, cmdObj.args, msg.reply);
+          break;
         case 'twitterfleets_sub':
         case 'twitterfleets_subscribe':
           this.botInfo.sub(chat, cmdObj.args, msg.reply);
@@ -192,6 +196,7 @@ export default class {
         case 'help':
           msg.reply(`推特故事搬运机器人：
 /twitterfleets - 查询当前聊天中的推特故事订阅
+/twitterfleets_view〈链接〉- 查看该用户当前可见的所有 Fleets
 /twitterfleets_subscribe [链接] - 订阅 Twitter Fleets 搬运
 /twitterfleets_unsubscribe [链接] - 退订 Twitter Fleets 搬运`);
       }

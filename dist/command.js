@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.unsub = exports.list = exports.sub = exports.parseCmd = void 0;
+exports.view = exports.unsub = exports.list = exports.sub = exports.parseCmd = void 0;
 const fs = require("fs");
 const path = require("path");
 const datetime_1 = require("./datetime");
@@ -28,7 +28,7 @@ function parseCmd(message) {
 }
 exports.parseCmd = parseCmd;
 function parseLink(link) {
-    let match = link.match(/twitter.com\/([^\/?#]+)/) ||
+    const match = link.match(/twitter.com\/([^\/?#]+)/) ||
         link.match(/^([^\/?#]+)$/);
     if (match)
         return [match[1]];
@@ -123,3 +123,20 @@ function list(chat, _, reply, lock) {
     return reply('此聊天中订阅推特故事的链接：\n' + links.join('\n'));
 }
 exports.list = list;
+function view(chat, args, reply) {
+    if (args.length === 0) {
+        return reply('找不到要查看的链接。');
+    }
+    const checkedMatch = parseLink(args[0]);
+    if (!checkedMatch) {
+        return reply(`订阅链接格式错误：
+示例：https://twitter.com/sunflower930316`);
+    }
+    try {
+        twitter_1.sendAllFleets(checkedMatch[0], chat);
+    }
+    catch (e) {
+        reply('推特机器人尚未加载完毕，请稍后重试。');
+    }
+}
+exports.view = view;

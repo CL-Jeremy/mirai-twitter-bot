@@ -111,8 +111,8 @@ extends CallableInstance<
       const messageChain: MessageChain = [];
 
       // text processing
-      let author = `${user.name} (@${user.screen_name}):\n`;
-      let date = `${new Date(fleet.created_at)}\n`;
+      const author = `${user.name} (@${user.screen_name}):\n`;
+      const date = `${new Date(fleet.created_at)}\n`;
       let text = author + date + fleet.media_bounding_boxes?.map(box => box.entity.value).join('\n') ?? '';
       messageChain.push(Message.Plain(author + date));
 
